@@ -4,8 +4,8 @@ set -e
 # AltPan Native Host Installer for Firefox
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOST_SCRIPT="$DIR/native/altpan_host.py"
-TARGET_DIR="$HOME/.mozilla/native-messaging-hosts"
-TARGET_JSON="$TARGET_DIR/altpan_host.json"
+TARGET_DIR1="$HOME/.mozilla/native-messaging-hosts"
+TARGET_DIR2="$HOME/.config/mozilla/native-messaging-hosts"
 
 echo "=========================================="
 echo " AltPan Native Messaging Bridge Installer "
@@ -17,9 +17,11 @@ if [ ! -f "$HOST_SCRIPT" ]; then
 fi
 
 chmod +x "$HOST_SCRIPT"
-mkdir -p "$TARGET_DIR"
+mkdir -p "$TARGET_DIR1"
+mkdir -p "$TARGET_DIR2"
 
-cat << EOF > "$TARGET_JSON"
+for TARGET_DIR in "$TARGET_DIR1" "$TARGET_DIR2"; do
+  cat << EOF > "$TARGET_DIR/altpan_host.json"
 {
   "name": "altpan_host",
   "description": "AltPan Native Messaging Input Bridge",
@@ -30,9 +32,9 @@ cat << EOF > "$TARGET_JSON"
   ]
 }
 EOF
-
-echo "✓ Registered manifest at:"
-echo "  $TARGET_JSON"
+  echo "✓ Registered manifest at:"
+  echo "  $TARGET_DIR/altpan_host.json"
+done
 echo ""
 
 # Check uinput accessibility

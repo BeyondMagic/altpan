@@ -9,6 +9,19 @@ import sys
 import struct
 import json
 import os
+import time
+
+LOG_FILE = "/tmp/altpan_host.log"
+
+def log(msg):
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
+log(f"altpan_host.py started. PID: {os.getpid()}, ARGV: {sys.argv}")
+
 
 try:
     import evdev
@@ -41,9 +54,11 @@ class PanDevice:
                     ]
                 }
                 self.ui = UInput(cap, name="AltPan Virtual Pan Device", version=0x1)
+                log("UInput created successfully.")
             except Exception as e:
                 sys.stderr.write(f"[AltPan Native] Failed to initialize UInput: {e}\n")
                 sys.stderr.flush()
+                log(f"Failed to initialize UInput: {e}")
                 self.ui = None
 
     def emit_pan(self, dx, dy, sensitivity=1.0, scale=1.0):
@@ -118,15 +133,18 @@ def send_response(data):
 
 
 def main():
+    log("main() entered.")
     device = PanDevice()
 
     while True:
         try:
             msg = read_message()
             if msg is None:
+                log("EOF reached on stdin. Exiting.")
                 break
 
             msg_type = msg.get("type")
+            log(f"Received message: {msg_type} -> {msg}")
 
             if msg_type == "ping":
                 send_response({
@@ -146,9 +164,11 @@ def main():
                 send_response({"ok": False, "error": f"Unknown message type: {msg_type}"})
 
         except Exception as e:
+            log(f"Exception in main loop: {e}")
             send_response({"ok": False, "error": str(e)})
 
     device.close()
+    log("altpan_host.py terminated cleanly.")
 
 
 if __name__ == "__main__":
