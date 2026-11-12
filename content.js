@@ -87,6 +87,8 @@
 
   function isModifierActive(e, keyName) {
     switch (keyName) {
+      case "None":
+        return true; // No modifier key required, middle-click only
       case "Alt":
         return e.altKey;
       case "Shift":
