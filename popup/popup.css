@@ -193,8 +193,40 @@ body {
   font-weight: 600;
   color: var(--accent);
   background-color: var(--accent-light);
-  padding: 1px 7px;
+  padding: 2px 7px;
   border-radius: 5px;
+  white-space: nowrap;
+}
+
+.badge-connected {
+  background-color: var(--success-bg) !important;
+  color: var(--success) !important;
+}
+
+.badge-offline {
+  background-color: var(--danger-bg) !important;
+  color: var(--danger) !important;
+}
+
+.help-box {
+  margin-top: 8px;
+  padding: 7px 9px;
+  background-color: var(--danger-bg);
+  color: var(--danger);
+  border-radius: 6px;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.help-box code {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  background-color: rgba(0, 0, 0, 0.07);
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  width: fit-content;
 }
 
 .divider {

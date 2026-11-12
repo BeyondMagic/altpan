@@ -16,7 +16,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     addCurrentBtn: document.getElementById("add-current-btn"),
     siteStatusPill: document.getElementById("site-status-pill"),
     siteStatusText: document.getElementById("site-status-text"),
-    saveStatus: document.getElementById("save-status")
+    saveStatus: document.getElementById("save-status"),
+    nativeDesc: document.getElementById("native-desc"),
+    nativeStatusBadge: document.getElementById("native-status-badge"),
+    nativeHelp: document.getElementById("native-help")
   };
 
   const DEFAULT_SETTINGS = {
@@ -59,6 +62,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  async function checkNativeBridge() {
+    try {
+      const res = await browser.runtime.sendMessage({ type: "altpan:check_native" });
+      elements.nativeStatusBadge.className = "badge-value";
+
+      if (res && res.connected) {
+        elements.nativeStatusBadge.textContent = "Connected";
+        elements.nativeStatusBadge.classList.add("badge-connected");
+        elements.nativeDesc.textContent = "Ready for pinch-zoomed viewports";
+        elements.nativeHelp.style.display = "none";
+      } else {
+        elements.nativeStatusBadge.textContent = "Offline";
+        elements.nativeStatusBadge.classList.add("badge-offline");
+        elements.nativeDesc.textContent = "Required for pinch-zoom pan";
+        elements.nativeHelp.style.display = "flex";
+      }
+    } catch (e) {
+      elements.nativeStatusBadge.textContent = "Offline";
+      elements.nativeStatusBadge.classList.add("badge-offline");
+      elements.nativeDesc.textContent = "Required for pinch-zoom pan";
+      elements.nativeHelp.style.display = "flex";
+    }
+  }
+
   function parseBlacklist(text) {
     return text
       .split("\n")
@@ -82,7 +109,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       }
     } catch (e) {
-      // Ignore internal pages or restricted tabs
+      // Ignore internal pages
     }
   }
 
@@ -112,6 +139,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const excluded = isHostExcluded(currentHostname, merged.blacklist || []);
     updateStatusPill(merged.enabled, excluded);
+
+    // Live check native messaging companion
+    await checkNativeBridge();
   }
 
   async function saveSettings() {
@@ -131,7 +161,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const excluded = isHostExcluded(currentHostname, list);
     updateStatusPill(settings.enabled, excluded);
 
-    // Save visual feedback
     elements.saveStatus.textContent = "Saved";
     elements.saveStatus.classList.add("saved");
     if (saveTimeout) clearTimeout(saveTimeout);

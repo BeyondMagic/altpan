@@ -1,13 +1,14 @@
 /**
  * AltPan Content Script (Manifest V3)
- * Provides 1:1 "Hand Tool" drag-to-pan scrolling for zoomed webpages and viewports
- * using Alt + Middle Mouse Button with kinetic momentum.
+ * Provides 1:1 "Hand Tool" drag-to-pan scrolling for zoomed webpages and viewports.
+ * Uses Native Messaging bridge (uinput high-res wheel) when pinch-zoomed to drive
+ * Firefox APZ compositor, and smooth direct DOM/container scrolling at normal zoom.
  */
 
 (function () {
   "use strict";
 
-  // Prevent double-injection in dynamic environments
+  // Prevent double-injection
   if (window.__ALTPAN_INITIALIZED__) return;
   window.__ALTPAN_INITIALIZED__ = true;
 
@@ -29,6 +30,9 @@
   // Runtime state
   let isPanning = false;
   let justFinishedPan = false;
+  let isPinchZoomedSession = false;
+  let startTargetElement = null;
+
   let lastClientX = 0;
   let lastClientY = 0;
   let lastTimestamp = 0;
@@ -52,7 +56,7 @@
         });
       }
     } catch (err) {
-      // Ignore context invalidated errors in detached tabs
+      // Ignore context invalidated
     }
   }
 
@@ -118,6 +122,54 @@
     }
   }
 
+  // --- Smart Container + Window Scrolling ---
+
+  function findScrollableAncestor(el, needX, needY) {
+    let cur = el;
+    while (cur && cur !== document.documentElement && cur !== document.body) {
+      const style = window.getComputedStyle(cur);
+      const ox = style.overflowX;
+      const oy = style.overflowY;
+      const canX = needX && (ox === "auto" || ox === "scroll") && (cur.scrollWidth > cur.clientWidth);
+      const canY = needY && (oy === "auto" || oy === "scroll") && (cur.scrollHeight > cur.clientHeight);
+
+      if (canX || canY) {
+        return { element: cur, canX, canY };
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  function scrollContainerOrWindow(startEl, scrollX, scrollY) {
+    let remX = scrollX;
+    let remY = scrollY;
+
+    if (startEl) {
+      const ancestor = findScrollableAncestor(startEl, Math.abs(scrollX) > 0, Math.abs(scrollY) > 0);
+      if (ancestor) {
+        const el = ancestor.element;
+        const beforeX = el.scrollLeft;
+        const beforeY = el.scrollTop;
+        el.scrollBy({
+          left: ancestor.canX ? scrollX : 0,
+          top: ancestor.canY ? scrollY : 0,
+          behavior: "instant"
+        });
+        if (ancestor.canX) remX -= (el.scrollLeft - beforeX);
+        if (ancestor.canY) remY -= (el.scrollTop - beforeY);
+      }
+    }
+
+    if (Math.abs(remX) > 0.5 || Math.abs(remY) > 0.5) {
+      window.scrollBy({
+        left: remX,
+        top: remY,
+        behavior: "instant"
+      });
+    }
+  }
+
   // --- Momentum / Inertia Simulation ---
 
   function cancelMomentum() {
@@ -127,7 +179,7 @@
     }
   }
 
-  function startMomentum(vx, vy) {
+  function startMomentum(vx, vy, isPinchZoomed, scale) {
     cancelMomentum();
 
     const friction = typeof settings.friction === "number" ? settings.friction : 0.92;
@@ -148,11 +200,18 @@
         return;
       }
 
-      window.scrollBy({
-        left: vx,
-        top: vy,
-        behavior: "instant"
-      });
+      if (isPinchZoomed && typeof browser !== "undefined" && browser.runtime) {
+        // In pinch zoom, replay decaying velocity through native wheel bridge
+        browser.runtime.sendMessage({
+          type: "altpan:native_pan",
+          deltaX: -vx,
+          deltaY: -vy,
+          scale: scale,
+          sensitivity: 1.0
+        }).catch(() => {});
+      } else {
+        scrollContainerOrWindow(startTargetElement, vx, vy);
+      }
 
       momentumRafId = requestAnimationFrame(step);
     }
@@ -167,7 +226,6 @@
   // --- Core Drag Gesture Lifecycle ---
 
   function onMouseDown(e) {
-    // Only target middle button (button === 1)
     if (e.button !== 1) return;
 
     if (!settings.enabled || isBlacklisted(window.location.hostname, settings.blacklist)) {
@@ -184,10 +242,15 @@
 
     cancelMomentum();
     isPanning = true;
+    startTargetElement = e.target;
     lastClientX = e.clientX;
     lastClientY = e.clientY;
     lastTimestamp = performance.now();
     velocitySamples = [];
+
+    // Check if currently pinch-zoomed via APZ
+    const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
+    isPinchZoomedSession = scale > 1.05;
 
     injectGrabbingCursor();
   }
@@ -211,23 +274,33 @@
 
     if (dx === 0 && dy === 0) return;
 
-    // Compensate for APZ pinch-zoom scale or visualViewport zoom
     const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
     const sensitivity = typeof settings.sensitivity === "number" ? settings.sensitivity : 1.0;
 
-    // "Hand Tool" direct 1:1 grab: moving mouse right/down shifts scroll position left/up
-    const scrollX = - (dx / scale) * sensitivity;
-    const scrollY = - (dy / scale) * sensitivity;
-
-    window.scrollBy({
-      left: scrollX,
-      top: scrollY,
-      behavior: "instant"
-    });
+    if (scale > 1.05) {
+      // 1. PINCH-ZOOMED APZ MODE: Route through Native Messaging bridge
+      isPinchZoomedSession = true;
+      if (typeof browser !== "undefined" && browser.runtime) {
+        browser.runtime.sendMessage({
+          type: "altpan:native_pan",
+          deltaX: dx,
+          deltaY: dy,
+          scale: scale,
+          sensitivity: sensitivity
+        }).catch(() => {});
+      }
+    } else {
+      // 2. STANDARD MODE: Direct DOM / Container 1:1 Scroll
+      isPinchZoomedSession = false;
+      const scrollX = - (dx / scale) * sensitivity;
+      const scrollY = - (dy / scale) * sensitivity;
+      scrollContainerOrWindow(startTargetElement, scrollX, scrollY);
+    }
 
     if (dt > 0) {
+      const scrollX = - (dx / scale) * sensitivity;
+      const scrollY = - (dy / scale) * sensitivity;
       velocitySamples.push({ scrollX, scrollY, dt, time: now });
-      // Keep only recent velocity samples within ~90ms
       velocitySamples = velocitySamples.filter((s) => now - s.time < 90);
       if (velocitySamples.length > 6) velocitySamples.shift();
     }
@@ -251,7 +324,7 @@
     if (!isPanning) return;
     isPanning = false;
 
-    // Set guard flag to swallow trailing auxclick / click / contextmenu events
+    // Guard flag to swallow trailing auxclick / click / contextmenu events
     justFinishedPan = true;
     setTimeout(() => {
       justFinishedPan = false;
@@ -275,13 +348,13 @@
         }
 
         if (totalDt > 0) {
-          // Standardize velocity to a 60fps frame (~16.67ms)
           const vx = (totalX / totalDt) * 16.67;
           const vy = (totalY / totalDt) * 16.67;
           const speed = Math.hypot(vx, vy);
 
           if (speed > 1.2) {
-            startMomentum(vx, vy);
+            const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
+            startMomentum(vx, vy, isPinchZoomedSession, scale);
           }
         }
       }
@@ -318,17 +391,13 @@
   }
 
   function onBlur() {
-    if (isPanning) {
-      endPan(false);
-    }
+    if (isPanning) endPan(false);
     cancelMomentum();
   }
 
   function onVisibilityChange() {
     if (document.hidden) {
-      if (isPanning) {
-        endPan(false);
-      }
+      if (isPanning) endPan(false);
       cancelMomentum();
     }
   }

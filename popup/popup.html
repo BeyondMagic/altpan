@@ -11,7 +11,7 @@
     <div class="brand">
       <img src="../icons/icon-32.png" alt="AltPan Logo" class="brand-logo" width="22" height="22">
       <h1 class="brand-name">AltPan</h1>
-      <span class="version-tag">v1.0</span>
+      <span class="version-tag">v1.1</span>
     </div>
     <div id="site-status-pill" class="status-pill status-active">
       <span class="status-dot"></span>
@@ -31,6 +31,21 @@
           <input type="checkbox" id="enable-toggle">
           <span class="slider"></span>
         </label>
+      </div>
+    </div>
+
+    <!-- Native Bridge Status (for APZ Pinch-Zoom) -->
+    <div class="setting-card">
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-title">APZ Native Bridge</span>
+          <span id="native-desc" class="setting-desc">Checking connection...</span>
+        </div>
+        <span id="native-status-badge" class="badge-value">Checking...</span>
+      </div>
+      <div id="native-help" class="help-box" style="display: none;">
+        <span>Pinch-zoom pan requires native helper:</span>
+        <code>./install_host.sh</code>
       </div>
     </div>
 
