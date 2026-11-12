@@ -24,8 +24,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const DEFAULT_SETTINGS = {
     enabled: true,
-    modifierKey: "Alt",
-    sensitivity: 1.0,
+    modifierKey: "None",
+    sensitivity: 0.5,
     momentumEnabled: true,
     friction: 0.92,
     blacklist: [

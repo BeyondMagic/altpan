@@ -57,8 +57,8 @@
           <span class="setting-desc">Key held during middle-click drag</span>
         </div>
         <select id="modifier-select" class="select-input">
-          <option value="Alt">Alt (Default)</option>
-          <option value="None">None (Middle Click Only)</option>
+          <option value="None" selected>None (Middle Click Only) (Default)</option>
+          <option value="Alt">Alt</option>
           <option value="Shift">Shift</option>
           <option value="Ctrl">Ctrl</option>
           <option value="Meta">Meta / Command</option>
@@ -70,12 +70,12 @@
       <div class="setting-col">
         <div class="label-with-value">
           <label for="sensitivity-slider" class="setting-title">Sensitivity</label>
-          <span id="sensitivity-value" class="badge-value">1.0x</span>
+          <span id="sensitivity-value" class="badge-value">0.5x</span>
         </div>
-        <input type="range" id="sensitivity-slider" min="0.5" max="2.5" step="0.1" value="1.0" class="range-slider">
+        <input type="range" id="sensitivity-slider" min="0.2" max="2.5" step="0.1" value="0.5" class="range-slider">
         <div class="range-labels">
-          <span>0.5x</span>
-          <span>1.0x (1:1)</span>
+          <span>0.2x</span>
+          <span>0.5x (Default)</span>
           <span>2.5x</span>
         </div>
       </div>

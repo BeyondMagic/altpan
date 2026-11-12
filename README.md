@@ -122,8 +122,8 @@ Click the AltPan toolbar icon to customize:
 | :--- | :--- | :--- |
 | **Enable AltPan** | `true` | Globally toggles the extension on or off. |
 | **APZ Native Bridge** | Live Status | Shows whether the native uinput bridge is connected. |
-| **Modifier Key** | `Alt` | Choose between `Alt`, `Shift`, `Ctrl`, or `Meta / Command`. |
-| **Sensitivity** | `1.0x` | Multiplier for drag speed (range `0.5x` to `2.5x`). |
+| **Modifier Key** | `None` | Choose between `None (Middle Click Only)`, `Alt`, `Shift`, `Ctrl`, or `Meta`. |
+| **Sensitivity** | `0.5x` | Multiplier for drag speed (range `0.2x` to `2.5x`). |
 | **Kinetic Momentum** | `Enabled` | Toggles kinetic coasting on release. |
 | **Coast Duration** | `Normal` (`0.92`) | Controls friction decay (Crisp: `0.88`, Normal: `0.92`, Floaty: `0.96`). |
 | **Excluded Domains** | `figma.com`, `miro.com`, `maps.google.com` | List of sites where AltPan is automatically disabled. |

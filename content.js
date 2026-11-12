@@ -14,8 +14,8 @@
 
   const DEFAULT_SETTINGS = {
     enabled: true,
-    modifierKey: "Alt", // "Alt", "Shift", "Ctrl", "Meta"
-    sensitivity: 1.0,
+    modifierKey: "None", // "None", "Alt", "Shift", "Ctrl", "Meta"
+    sensitivity: 0.5,
     momentumEnabled: true,
     friction: 0.92,
     blacklist: [
@@ -38,6 +38,11 @@
   let lastTimestamp = 0;
   let velocitySamples = [];
   let momentumRafId = null;
+
+  // Animation frame batching for silky smooth drag dispatch
+  let pendingDx = 0;
+  let pendingDy = 0;
+  let panRafId = null;
 
   const STYLE_ID = "altpan-cursor-lock-style";
 
@@ -225,59 +230,28 @@
     cancelMomentum();
   }
 
-  // --- Core Drag Gesture Lifecycle ---
+  // --- Animation Frame Drag Dispatcher ---
 
-  function onMouseDown(e) {
-    if (e.button !== 1) return;
-
-    if (!settings.enabled || isBlacklisted(window.location.hostname, settings.blacklist)) {
-      return;
+  function cancelPanRaf() {
+    if (panRafId !== null) {
+      cancelAnimationFrame(panRafId);
+      panRafId = null;
     }
-
-    if (!isModifierActive(e, settings.modifierKey)) {
-      return;
-    }
-
-    // Suppress Firefox's built-in auto-scroll icon, link opening, and X11 paste
-    e.preventDefault();
-    e.stopImmediatePropagation();
-
-    cancelMomentum();
-    isPanning = true;
-    startTargetElement = e.target;
-    lastClientX = e.clientX;
-    lastClientY = e.clientY;
-    lastTimestamp = performance.now();
-    velocitySamples = [];
-
-    // Check if currently pinch-zoomed via APZ
-    const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
-    isPinchZoomedSession = scale > 1.05;
-
-    injectGrabbingCursor();
   }
 
-  function onMouseMove(e) {
+  function dispatchPendingPan() {
+    panRafId = null;
     if (!isPanning) return;
 
-    // If modifier was released while dragging, seamlessly end pan and engage momentum
-    if (!isModifierActive(e, settings.modifierKey)) {
-      endPan(true);
-      return;
-    }
-
-    e.preventDefault();
-    e.stopImmediatePropagation();
-
-    const now = performance.now();
-    const dx = e.clientX - lastClientX;
-    const dy = e.clientY - lastClientY;
-    const dt = now - lastTimestamp;
+    const dx = pendingDx;
+    const dy = pendingDy;
+    pendingDx = 0;
+    pendingDy = 0;
 
     if (dx === 0 && dy === 0) return;
 
     const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
-    const sensitivity = typeof settings.sensitivity === "number" ? settings.sensitivity : 1.0;
+    const sensitivity = typeof settings.sensitivity === "number" ? settings.sensitivity : 0.5;
 
     if (scale > 1.05) {
       // 1. PINCH-ZOOMED APZ MODE: Route through Native Messaging bridge
@@ -313,18 +287,84 @@
         }).catch(() => {});
       }
     }
+  }
+
+  // --- Core Drag Gesture Lifecycle ---
+
+  function onMouseDown(e) {
+    if (e.button !== 1) return;
+
+    if (!settings.enabled || isBlacklisted(window.location.hostname, settings.blacklist)) {
+      return;
+    }
+
+    if (!isModifierActive(e, settings.modifierKey)) {
+      return;
+    }
+
+    // Suppress Firefox's built-in auto-scroll icon, link opening, and X11 paste
+    e.preventDefault();
+    e.stopImmediatePropagation();
+
+    cancelMomentum();
+    cancelPanRaf();
+    pendingDx = 0;
+    pendingDy = 0;
+    isPanning = true;
+    startTargetElement = e.target;
+    lastClientX = e.clientX;
+    lastClientY = e.clientY;
+    lastTimestamp = performance.now();
+    velocitySamples = [];
+
+    // Check if currently pinch-zoomed via APZ
+    const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
+    isPinchZoomedSession = scale > 1.05;
+
+    injectGrabbingCursor();
+  }
+
+  function onMouseMove(e) {
+    if (!isPanning) return;
+
+    // If modifier was released while dragging, seamlessly end pan and engage momentum
+    if (!isModifierActive(e, settings.modifierKey)) {
+      endPan(true);
+      return;
+    }
+
+    e.preventDefault();
+    e.stopImmediatePropagation();
+
+    const now = performance.now();
+    const dx = e.clientX - lastClientX;
+    const dy = e.clientY - lastClientY;
+    const dt = now - lastTimestamp;
+
+    if (dx === 0 && dy === 0) return;
+
+    lastClientX = e.clientX;
+    lastClientY = e.clientY;
+    lastTimestamp = now;
+
+    pendingDx += dx;
+    pendingDy += dy;
+
+    const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
+    const sensitivity = typeof settings.sensitivity === "number" ? settings.sensitivity : 0.5;
 
     if (dt > 0) {
       const scrollX = - (dx / scale) * sensitivity;
       const scrollY = - (dy / scale) * sensitivity;
       velocitySamples.push({ scrollX, scrollY, dt, time: now });
       velocitySamples = velocitySamples.filter((s) => now - s.time < 90);
-      if (velocitySamples.length > 6) velocitySamples.shift();
+      if (velocitySamples.length > 8) velocitySamples.shift();
     }
 
-    lastClientX = e.clientX;
-    lastClientY = e.clientY;
-    lastTimestamp = now;
+    // Batch continuous moves per display refresh frame to avoid IPC queue congestion
+    if (!panRafId) {
+      panRafId = requestAnimationFrame(dispatchPendingPan);
+    }
   }
 
   function onMouseUp(e) {
@@ -340,6 +380,35 @@
   function endPan(launchMomentum) {
     if (!isPanning) return;
     isPanning = false;
+
+    cancelPanRaf();
+
+    // Flush any pending delta from the final frame before release
+    if (pendingDx !== 0 || pendingDy !== 0) {
+      const dx = pendingDx;
+      const dy = pendingDy;
+      pendingDx = 0;
+      pendingDy = 0;
+
+      const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
+      const sensitivity = typeof settings.sensitivity === "number" ? settings.sensitivity : 0.5;
+
+      if (scale > 1.05) {
+        if (typeof browser !== "undefined" && browser.runtime) {
+          browser.runtime.sendMessage({
+            type: "altpan:native_pan",
+            deltaX: dx,
+            deltaY: dy,
+            scale: scale,
+            sensitivity: sensitivity
+          }).catch(() => {});
+        }
+      } else {
+        const scrollX = - (dx / scale) * sensitivity;
+        const scrollY = - (dy / scale) * sensitivity;
+        scrollContainerOrWindow(startTargetElement, scrollX, scrollY);
+      }
+    }
 
     // Guard flag to swallow trailing auxclick / click / contextmenu events
     justFinishedPan = true;

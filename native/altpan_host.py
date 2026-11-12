@@ -31,15 +31,19 @@ except ImportError:
     HAS_EVDEV = False
 
 # High-resolution wheel units: 120 units = 1 standard wheel notch.
-# Calibration: ~6 units per pixel produces authentic 1:1 screen tracking.
-HI_RES_PER_PIXEL = 6.0
+# In Firefox APZ with smooth scrolling, 1 notch (120 units) corresponds
+# to ~100px of scroll distance.
+# Setting HI_RES_PER_PIXEL to 1.2 produces authentic 1:1 screen tracking
+# at sensitivity = 1.0 (100px mouse drag -> 120 units -> 100px scroll).
+HI_RES_PER_PIXEL = 1.2
 
 
 class PanDevice:
     def __init__(self):
         self.ui = None
-        self.acc_hwheel = 0.0
-        self.acc_vwheel = 0.0
+        self.remainder_x = 0.0
+        self.remainder_y = 0.0
+        self.last_event_time = time.monotonic()
 
         if HAS_EVDEV:
             try:
@@ -61,7 +65,7 @@ class PanDevice:
                 log(f"Failed to initialize UInput: {e}")
                 self.ui = None
 
-    def emit_pan(self, dx, dy, sensitivity=1.0, scale=1.0):
+    def emit_pan(self, dx, dy, sensitivity=0.5, scale=1.0):
         if not self.ui:
             return False
 
@@ -70,32 +74,32 @@ class PanDevice:
         # Dragging mouse right (dx > 0) -> scroll left (-HWHEEL)
         # Dragging mouse up (dy < 0) -> scroll down (-WHEEL in Linux libinput)
         # Dragging mouse down (dy > 0) -> scroll up (+WHEEL in Linux libinput)
-        eff_scale = max(scale, 0.1)
-        hi_res_x = - (dx / eff_scale) * sensitivity * HI_RES_PER_PIXEL
-        hi_res_y = (dy / eff_scale) * sensitivity * HI_RES_PER_PIXEL
+        now = time.monotonic()
+        if now - self.last_event_time > 0.2:
+            self.remainder_x = 0.0
+            self.remainder_y = 0.0
+        self.last_event_time = now
+
+        # Convert physical drag pixels directly to continuous high-res wheel ticks.
+        # Firefox APZ compositor already accounts for visual zoom internally.
+        hi_res_x = - dx * sensitivity * HI_RES_PER_PIXEL + self.remainder_x
+        hi_res_y = dy * sensitivity * HI_RES_PER_PIXEL + self.remainder_y
 
         int_x = int(round(hi_res_x))
         int_y = int(round(hi_res_y))
 
+        self.remainder_x = hi_res_x - int_x
+        self.remainder_y = hi_res_y - int_y
+
+        # Emit high-resolution continuous wheel events.
+        # We do NOT emit discrete REL_WHEEL / REL_HWHEEL notches here because
+        # firing discrete clicks causes Firefox APZ to trigger abrupt step animations
+        # that fight with high-frequency continuous dragging gestures.
         if int_x != 0:
             self.ui.write(ecodes.EV_REL, ecodes.REL_HWHEEL_HI_RES, int_x)
-            self.acc_hwheel += int_x
-            while self.acc_hwheel >= 120:
-                self.ui.write(ecodes.EV_REL, ecodes.REL_HWHEEL, 1)
-                self.acc_hwheel -= 120
-            while self.acc_hwheel <= -120:
-                self.ui.write(ecodes.EV_REL, ecodes.REL_HWHEEL, -1)
-                self.acc_hwheel += 120
 
         if int_y != 0:
             self.ui.write(ecodes.EV_REL, ecodes.REL_WHEEL_HI_RES, int_y)
-            self.acc_vwheel += int_y
-            while self.acc_vwheel >= 120:
-                self.ui.write(ecodes.EV_REL, ecodes.REL_WHEEL, 1)
-                self.acc_vwheel -= 120
-            while self.acc_vwheel <= -120:
-                self.ui.write(ecodes.EV_REL, ecodes.REL_WHEEL, -1)
-                self.acc_vwheel += 120
 
         if int_x != 0 or int_y != 0:
             self.ui.syn()
@@ -144,9 +148,9 @@ def main():
                 break
 
             msg_type = msg.get("type")
-            log(f"Received message: {msg_type} -> {msg}")
 
             if msg_type == "ping":
+                log("Received ping, responding with pong.")
                 send_response({
                     "type": "pong",
                     "ok": True,
@@ -156,11 +160,12 @@ def main():
                 dx = float(msg.get("deltaX", 0))
                 dy = float(msg.get("deltaY", 0))
                 scale = float(msg.get("scale", 1.0))
-                sensitivity = float(msg.get("sensitivity", 1.0))
+                sensitivity = float(msg.get("sensitivity", 0.5))
 
                 success = device.emit_pan(dx, dy, sensitivity, scale)
                 send_response({"ok": success})
             else:
+                log(f"Received unknown message type: {msg_type}")
                 send_response({"ok": False, "error": f"Unknown message type: {msg_type}"})
 
         except Exception as e:
