@@ -290,11 +290,26 @@
         }).catch(() => {});
       }
     } else {
-      // 2. STANDARD MODE: Direct DOM / Container 1:1 Scroll
+      // 2. STANDARD MODE: Direct DOM / Container 1:1 Scroll with Residual Fallback
       isPinchZoomedSession = false;
       const scrollX = - (dx / scale) * sensitivity;
       const scrollY = - (dy / scale) * sensitivity;
+
+      const beforeX = window.scrollX;
       scrollContainerOrWindow(startTargetElement, scrollX, scrollY);
+      const movedX = window.scrollX - beforeX;
+      const residualX = scrollX - movedX;
+
+      // If page layout has 0 horizontal scroll extent, forward residual delta to native APZ bridge
+      if (Math.abs(residualX) > 0.5 && typeof browser !== "undefined" && browser.runtime) {
+        browser.runtime.sendMessage({
+          type: "altpan:native_pan",
+          deltaX: -residualX,
+          deltaY: 0,
+          scale: 1.0,
+          sensitivity: 1.0
+        }).catch(() => {});
+      }
     }
 
     if (dt > 0) {

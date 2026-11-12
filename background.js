@@ -75,13 +75,31 @@ function updateBadge(enabled) {
   }
 }
 
+// Test native host connection on script load
+function pingNativeHost() {
+  try {
+    browser.runtime.sendNativeMessage("altpan_host", { type: "ping" })
+      .then((res) => {
+        console.log("[AltPan] Native bridge startup ping response:", res);
+      })
+      .catch((err) => {
+        console.warn("[AltPan] Native bridge startup ping error:", err);
+      });
+  } catch (e) {
+    console.warn("[AltPan] Failed to initiate native ping:", e);
+  }
+}
+pingNativeHost();
+
 // Lifecycle listeners
 browser.runtime.onInstalled.addListener(() => {
   initializeSettings();
+  pingNativeHost();
 });
 
 browser.runtime.onStartup.addListener(() => {
   initializeSettings();
+  pingNativeHost();
 });
 
 // React to live settings changes
