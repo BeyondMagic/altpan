@@ -51,22 +51,49 @@ AltPan gives you a hand-tool drag gesture (middle-click drag by default) that pa
 
 AltPan picks between DOM scrolling and a native input helper depending on your current zoom level:
 
-```
-[User Action: Middle-Click Drag]
-               │
-               ▼
-   Is visualViewport.scale > 1.05?
-          │                │
-         YES               NO
-          │                │
-          ▼                ▼
-   [Native Bridge]   [DOM / Container]
-          │                │
-   High-Res Wheel     scrollBy
-   (uinput via IPC)   (main thread)
-          │                │
-          ▼                ▼
-   Firefox APZ Pan   Layout Scrolled
+```mermaid
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 36, "rankSpacing": 56, "padding": 18, "subGraphTitleMargin": {"top": 14, "bottom": 14}}}}%%
+flowchart TD
+    Act(["🖱️ User action<br/>middle-button drag"])
+
+    Dec{"visualViewport.scale<br/>&gt; 1.05 ?"}
+
+    subgraph native["Native path"]
+        direction TB
+        Bridge["Native Bridge<br/><i>IPC</i>"]
+        Wheel["High-resolution wheel<br/><small>uinput via IPC</small>"]
+        APZ["Firefox APZ Pan<br/><small>compositor thread</small>"]
+        Bridge --> Wheel --> APZ
+    end
+
+    subgraph dom["DOM path"]
+        direction TB
+        Container["DOM / Container"]
+        ScrollBy["scrollBy()<br/><small>main thread</small>"]
+        Layout["Layout Scrolled<br/><small>repaint</small>"]
+        Container --> ScrollBy --> Layout
+    end
+
+    Act --> Dec
+    Dec -->|"YES"| Bridge
+    Dec -->|"NO"| Container
+
+    classDef trigger fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1;
+    classDef decision fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#7A4F00;
+    classDef nativeNode fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20;
+    classDef domNode fill:#E7F0FA,stroke:#1E6BB8,stroke-width:2px,color:#10395E;
+    classDef outcomeN fill:#2E7D32,stroke:#1B5E20,stroke-width:3px,color:#FFFFFF;
+    classDef outcomeD fill:#1E6BB8,stroke:#10395E,stroke-width:3px,color:#FFFFFF;
+
+    class Act trigger;
+    class Dec decision;
+    class Bridge,Wheel nativeNode;
+    class Container,ScrollBy domNode;
+    class APZ outcomeN;
+    class Layout outcomeD;
+
+    style native fill:#F4FBF5,stroke:#66BB6A,stroke-width:2px;
+    style dom fill:#F5F9FD,stroke:#7FA9D4,stroke-width:2px;
 ```
 
 At normal zoom (`scale <= 1.05`), `content.js` scrolls the nearest scrollable parent container (like a code block or wide table) or falls back to `window.scrollBy`.
