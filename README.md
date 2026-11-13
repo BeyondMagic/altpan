@@ -96,10 +96,6 @@ flowchart TD
     style dom fill:#F5F9FD,stroke:#7FA9D4,stroke-width:2px;
 ```
 
-At normal zoom (`scale <= 1.05`), `content.js` scrolls the nearest scrollable parent container (like a code block or wide table) or falls back to `window.scrollBy`.
-
-When pinch-zoomed (`scale > 1.05`), `content.js` batches mouse deltas on each `requestAnimationFrame` and sends them to `native/altpan_host.py` over Firefox's Native Messaging API. The Python helper writes high-resolution wheel events (`REL_HWHEEL_HI_RES` and `REL_WHEEL_HI_RES`) to `/dev/uinput`, which feeds directly into Firefox's Asynchronous Pan/Zoom (APZ) compositor. Firefox doesn't implement `browser.debugger`, so this local uinput bridge is how AltPan gets around the read-only visual viewport.
-
 ## Installation
 
 You need both the Firefox extension and the Linux native helper (the helper is only needed if you want pinch-zoom panning).
