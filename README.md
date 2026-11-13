@@ -43,13 +43,11 @@
 
 ## Purpose
 
-If you pinch-zoom into a page in Firefox and try to pan around with a regular mouse, you quickly hit a wall. Standard autoscroll or `window.scrollBy` calls only move the DOM layout viewport. When a page doesn't overflow horizontally (`scrollWidth == clientWidth`), horizontal scrolling stays stuck at `0`, and `visualViewport.offsetLeft` is read-only.
+Firefox does not provide a reliable way to pan a pinch-zoomed page with a mouse. Built-in scrolling methods move only the page layout, so horizontal movement stops when the page itself has no overflow, and the visual viewport offset cannot be set directly.
 
-AltPan gives you a hand-tool drag gesture (middle-click drag by default) that pans both axes at 1:1 speed, even while pinch-zoomed.
+AltPan adds a drag-to-pan gesture, assigned to middle-button drag by default. While the button is held and the mouse moves, the page pans horizontally and vertically at the same speed as the pointer, including when the page is zoomed in.
 
 ## Technical Architecture
-
-AltPan picks between DOM scrolling and a native input helper depending on your current zoom level:
 
 ```mermaid
 %%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 36, "rankSpacing": 56, "padding": 18, "subGraphTitleMargin": {"top": 14, "bottom": 14}}}}%%
@@ -98,7 +96,7 @@ flowchart TD
 
 ## Installation
 
-You need both the Firefox extension and the Linux native helper (the helper is only needed if you want pinch-zoom panning).
+You need both the Firefox extension and the Linux native helper.
 
 ### Step 1: Install the native helper (Linux)
 
@@ -114,6 +112,11 @@ This writes the native host manifest to `~/.mozilla/native-messaging-hosts/` and
 
 > [!NOTE]
 > The helper writes to `/dev/uinput` using Python's `evdev` package. If your user account can't open `/dev/uinput`, add yourself to the `input` group and log back in:
+>
+> ```nu
+> doas usermod -aG input $env.USER
+> ```
+>
 > ```bash
 > sudo usermod -aG input $USER
 > ```
