@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>
-    A Firefox WebExtension (Manifest V3) for smooth, 1:1 "Hand Tool" drag-to-pan scrolling across zoomed viewports.
+    A Firefox extension for middle-click drag panning across zoomed pages and viewports.
   </strong>
 </p>
 
@@ -28,33 +28,31 @@
 </p>
 
 <p align="center">
-  <strong>1:1 Hand Tool Pan</strong>
+  <strong>1:1 Hand-Tool Pan</strong>
   &middot;
-  <strong>APZ Pinch-Zoom Engine</strong>
+  <strong>Pinch-Zoom Support</strong>
   &middot;
-  <strong>Linux /dev/uinput Bridge</strong>
+  <strong>Linux uinput Bridge</strong>
   &middot;
   <strong>Kinetic Momentum</strong>
   &middot;
-  <strong>Zero Event Conflicts</strong>
+  <strong>Container Scrolling</strong>
   &middot;
-  <strong>Configurable Sensitivity</strong>
+  <strong>Domain Blacklist</strong>
 </p>
 
 ## Purpose
 
-When pinch-zooming into a webpage in Firefox using a trackpad or touchscreen, Firefox's compositor zooms the **Visual Viewport** independently of document layout. The underlying DOM **Layout Viewport** remains constrained to window boundaries (`scrollWidth == clientWidth`).
+If you pinch-zoom into a page in Firefox and try to pan around with a regular mouse, you quickly hit a wall. Standard autoscroll or `window.scrollBy` calls only move the DOM layout viewport. When a page doesn't overflow horizontally (`scrollWidth == clientWidth`), horizontal scrolling stays stuck at `0`, and `visualViewport.offsetLeft` is read-only.
 
-Because traditional JavaScript scrolling (`window.scrollBy`) operates strictly on the layout viewport, horizontal panning is mathematically clamped to `0`, and standard DOM APIs offer no setter for the read-only `visualViewport.offsetLeft`.
-
-**AltPan** solves this by providing a universal, tactile 1:1 "Hand Tool" drag-to-pan gesture (Middle-Click Drag by default) that moves the canvas under your cursor identically to physical touch input on touchscreens and precision touchpads.
+AltPan gives you a hand-tool drag gesture (middle-click drag by default) that pans both axes at 1:1 speed, even while pinch-zoomed.
 
 ## Technical Architecture
 
-AltPan implements a dynamic dual-mode architecture that routes gestures based on the current zoom state:
+AltPan picks between DOM scrolling and a native input helper depending on your current zoom level:
 
 ```
-[User Action: Middle Click Drag]
+[User Action: Middle-Click Drag]
                │
                ▼
    Is visualViewport.scale > 1.05?
@@ -64,22 +62,22 @@ AltPan implements a dynamic dual-mode architecture that routes gestures based on
           ▼                ▼
    [Native Bridge]   [DOM / Container]
           │                │
-   High-Res Wheel     Smart scrollBy
-   (uinput via IPC)   (0ms main thread)
+   High-Res Wheel     scrollBy
+   (uinput via IPC)   (main thread)
           │                │
           ▼                ▼
    Firefox APZ Pan   Layout Scrolled
 ```
 
-- **Standard Zoom (`scale <= 1.05`):** Panning executes directly in the content script via `scrollBy` on the nearest scrollable ancestor container (code block, table, editor) or window with zero IPC latency.
-- **Pinch-Zoomed Viewport (`scale > 1.05`):** Content script coalesces drag deltas per display refresh frame (`requestAnimationFrame`) and forwards them to a local Python companion (`altpan_host.py`) via the standard WebExtension Native Messaging API. The host synthesizes genuine high-resolution wheel ticks via Linux `/dev/uinput` (`REL_HWHEEL_HI_RES` / `REL_WHEEL_HI_RES`), directly driving Firefox's native Asynchronous Pan/Zoom (APZ) compositor across both axes.
-- **Why Not `browser.debugger`?** Unlike Chromium, Firefox WebExtensions do not implement the `debugger` API (`browser.debugger` is undefined). Native messaging via `/dev/uinput` is the only supported, secure, and banner-free path to inject compositor-grade input.
+At normal zoom (`scale <= 1.05`), `content.js` scrolls the nearest scrollable parent container (like a code block or wide table) or falls back to `window.scrollBy`.
+
+When pinch-zoomed (`scale > 1.05`), `content.js` batches mouse deltas on each `requestAnimationFrame` and sends them to `native/altpan_host.py` over Firefox's Native Messaging API. The Python helper writes high-resolution wheel events (`REL_HWHEEL_HI_RES` and `REL_WHEEL_HI_RES`) to `/dev/uinput`, which feeds directly into Firefox's Asynchronous Pan/Zoom (APZ) compositor. Firefox doesn't implement `browser.debugger`, so this local uinput bridge is how AltPan gets around the read-only visual viewport.
 
 ## Installation
 
-AltPan consists of two components: the **Native Messaging Companion** (for APZ pinch-zoom panning) and the **Firefox WebExtension**.
+You need both the Firefox extension and the Linux native helper (the helper is only needed if you want pinch-zoom panning).
 
-### Step 1: Install the Native Companion (Linux)
+### Step 1: Install the native helper (Linux)
 
 Clone the repository and run the installer script:
 
@@ -89,46 +87,43 @@ cd altpan
 ./install_host.sh
 ```
 
-This registers the native messaging manifest in `~/.mozilla/native-messaging-hosts/` and `~/.config/mozilla/native-messaging-hosts/`, and ensures `native/altpan_host.py` has executable permissions.
+This writes the native host manifest to `~/.mozilla/native-messaging-hosts/` and `~/.config/mozilla/native-messaging-hosts/`, and marks `native/altpan_host.py` executable.
 
 > [!NOTE]
-> The companion uses Linux `/dev/uinput` via Python's `evdev` module. If your user account does not have write access to `/dev/uinput`, run:
+> The helper writes to `/dev/uinput` using Python's `evdev` package. If your user account can't open `/dev/uinput`, add yourself to the `input` group and log back in:
 > ```bash
 > sudo usermod -aG input $USER
 > ```
-> Then log out and log back in for group membership to take effect.
 
-### Step 2: Install the WebExtension in Firefox
+### Step 2: Install the extension in Firefox
 
-Choose one of the following methods:
+#### Option 1: Permanent install
 
-#### Option A: Permanent Installation (Recommended)
+Copy `altpan.xpi` into your Firefox profile's `extensions/` directory:
 
-1. Copy the pre-built `altpan.xpi` directly into your active Firefox profile's `extensions/` folder:
-   ```bash
-   cp altpan.xpi ~/.config/mozilla/firefox/<your-profile>/extensions/altpan@terra.local.xpi
-   ```
-2. Alternatively, open Firefox, go to `about:addons`, click the gear icon (⚙️), select **Install Add-on From File...**, and choose `altpan.xpi`.
+```bash
+cp altpan.xpi ~/.config/mozilla/firefox/<your-profile>/extensions/altpan@terra.local.xpi
+```
 
-#### Option B: Developer Mode (Temporary)
+You can also open `about:addons`, click the gear icon, pick "Install Add-on From File...", and select `altpan.xpi`.
 
-1. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`.
-2. Click **Load Temporary Add-on...**.
-3. Select `manifest.json` from the cloned repository folder.
+#### Option 2: Temporary install (developer mode)
+
+Open `about:debugging#/runtime/this-firefox`, click "Load Temporary Add-on...", and pick `manifest.json` from the repository folder.
 
 ## Configuration
 
-Click the AltPan toolbar icon to open the configuration popup:
+Click the AltPan icon in your toolbar to change any setting:
 
 | Setting | Default | Description |
 | :--- | :--- | :--- |
-| **Enable AltPan** | `true` | Globally toggles the drag-to-pan extension on or off. |
-| **APZ Native Bridge** | Live Status | Displays live connection status to the `/dev/uinput` host. |
-| **Modifier Key** | `None` | Key held during drag: `None (Middle Click Only)`, `Alt`, `Shift`, `Ctrl`, or `Meta`. |
-| **Sensitivity** | `0.5x` | Drag speed multiplier (slider range: `0.2x` to `2.5x`). |
-| **Kinetic Momentum** | `Enabled` | Enables smooth exponential coasting upon gesture release. |
-| **Coast Duration** | `Normal` (`0.92`) | Controls friction decay (`Crisp`: `0.88`, `Normal`: `0.92`, `Floaty`: `0.96`). |
-| **Excluded Domains** | `figma.com`, `miro.com`, `maps.google.com` | Hostnames where AltPan is automatically suppressed, with a **+ Current Site** shortcut. |
+| Enable AltPan | `true` | Turns AltPan on or off globally. |
+| APZ Native Bridge | Live Status | Shows whether the `/dev/uinput` helper is connected. |
+| Modifier Key | `None` | Key held during drag: `None` (middle-click only), `Alt`, `Shift`, `Ctrl`, or `Meta`. |
+| Sensitivity | `0.5x` | Drag speed multiplier (from `0.2x` to `2.5x`). |
+| Kinetic Momentum | `Enabled` | Keeps scrolling briefly after you let go of the mouse button. |
+| Coast Duration | `Normal` (`0.92`) | How fast momentum slows down (`Crisp`: `0.88`, `Normal`: `0.92`, `Floaty`: `0.96`). |
+| Excluded Domains | `figma.com`, `miro.com`, `maps.google.com` | Sites where AltPan stays out of the way (plus a "+ Current Site" button). |
 
 ___
 
