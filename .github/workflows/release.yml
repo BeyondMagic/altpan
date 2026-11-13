@@ -1,0 +1,106 @@
+name: Release Extension
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "background.js"
+      - "content.js"
+      - "manifest.json"
+      - "icons/**"
+      - "native/**"
+      - "popup/**"
+      - "install_host.sh"
+      - "uninstall_host.sh"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version or bump keyword (e.g. 1.2.0, patch, minor, major)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: |
+      github.actor != 'github-actions[bot]' &&
+      !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ github.token }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Determine release version and notes
+        id: meta
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 scripts/release.py prepare \
+            --event "$EVENT_NAME" \
+            --input-version "$INPUT_VERSION" \
+            --notes-out release_notes.md \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Sync version into manifest.json and popup.html
+        run: |
+          python3 scripts/release.py sync-version --version "${{ steps.meta.outputs.version }}"
+
+      - name: Commit version sync and push tag
+        run: |
+          TAG="${{ steps.meta.outputs.version }}"
+          git checkout -B master
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add manifest.json popup/popup.html
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(release): $TAG [skip ci]"
+            if ! git push origin master; then
+              git pull --rebase origin master
+              git push origin master
+            fi
+          fi
+
+          git tag -f "$TAG"
+          git push origin "$TAG" --force
+
+      - name: Package extension and native helper
+        run: |
+          mkdir -p dist
+          zip -r dist/altpan.xpi manifest.json background.js content.js popup/ icons/ -x '*/__pycache__/*' '*.pyc'
+          tar --exclude='__pycache__' --exclude='*.pyc' -czf dist/altpan-native.tar.gz native/ install_host.sh uninstall_host.sh
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.meta.outputs.version }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              dist/altpan.xpi \
+              dist/altpan-native.tar.gz \
+              --clobber
+          else
+            gh release create "$TAG" \
+              dist/altpan.xpi \
+              dist/altpan-native.tar.gz \
+              --title "$TAG" \
+              --notes-file release_notes.md
+          fi
