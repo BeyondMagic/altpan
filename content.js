@@ -18,6 +18,7 @@
     sensitivity: 0.5,
     momentumEnabled: true,
     friction: 0.92,
+    forceVisualPan: false,
     debugMode: false,
     blacklist: [
       "figma.com",
@@ -190,7 +191,7 @@
     let remX = scrollX;
     let remY = scrollY;
 
-    if (startEl) {
+    if (startEl && !settings.forceVisualPan) {
       const ancestor = findScrollableAncestor(startEl, Math.abs(scrollX) > 0, Math.abs(scrollY) > 0);
       if (ancestor) {
         const el = ancestor.element;
@@ -270,6 +271,7 @@
       type: "altpan:visual_pan",
       deltaX: dx,
       deltaY: dy,
+      forceVisual: !!settings.forceVisualPan,
       debug: !!settings.debugMode
     }).then((res) => {
       if (settings.debugMode) {

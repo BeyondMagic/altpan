@@ -26,6 +26,7 @@
               "tabId": { "type": "integer" },
               "deltaX": { "type": "number" },
               "deltaY": { "type": "number" },
+              "forceVisual": { "type": "boolean" },
               "debug": { "type": "boolean" }
             },
             "required": ["tabId", "deltaX", "deltaY"]

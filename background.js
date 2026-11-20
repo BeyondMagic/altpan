@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   sensitivity: 0.5,
   momentumEnabled: true,
   friction: 0.92,
+  forceVisualPan: false,
   debugMode: false,
   blacklist: [
     "figma.com",
@@ -102,6 +103,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       tabId,
       deltaX: Number(msg.deltaX) || 0,
       deltaY: Number(msg.deltaY) || 0,
+      forceVisual: !!msg.forceVisual,
       debug: !!msg.debug
     }).then((res) => {
       if (!res || !res.ok) {

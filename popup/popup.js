@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     frictionValue: document.getElementById("friction-value"),
     blacklistInput: document.getElementById("blacklist-input"),
     addCurrentBtn: document.getElementById("add-current-btn"),
+    forceVisualToggle: document.getElementById("force-visual-toggle"),
     debugToggle: document.getElementById("debug-toggle"),
     siteStatusPill: document.getElementById("site-status-pill"),
     siteStatusText: document.getElementById("site-status-text"),
@@ -31,6 +32,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     sensitivity: 0.5,
     momentumEnabled: true,
     friction: 0.92,
+    forceVisualPan: false,
     debugMode: false,
     blacklist: [
       "figma.com",
@@ -141,6 +143,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     elements.blacklistInput.value = (merged.blacklist || []).join("\n");
+    elements.forceVisualToggle.checked = !!merged.forceVisualPan;
     elements.debugToggle.checked = !!merged.debugMode;
 
     const excluded = isHostExcluded(currentHostname, merged.blacklist || []);
@@ -158,6 +161,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       sensitivity: parseFloat(elements.sensitivitySlider.value),
       momentumEnabled: elements.momentumToggle.checked,
       friction: parseFloat(elements.frictionSlider.value),
+      forceVisualPan: elements.forceVisualToggle.checked,
       debugMode: elements.debugToggle.checked,
       blacklist: list
     };
@@ -203,6 +207,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   elements.blacklistInput.addEventListener("input", saveSettings);
+  elements.forceVisualToggle.addEventListener("change", saveSettings);
   elements.debugToggle.addEventListener("change", saveSettings);
 
   elements.addCurrentBtn.addEventListener("click", () => {

@@ -112,13 +112,13 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
           return { available: true };
         },
 
-        async panVisual({ tabId, deltaX, deltaY, debug = false }) {
+        async panVisual({ tabId, deltaX, deltaY, forceVisual = false, debug = false }) {
           try {
             const actor = getTopActor(extension, tabId);
             if (!actor) {
               return { ok: false, reason: "no-actor" };
             }
-            return await actor.sendQuery("AltPan:Pan", { deltaX, deltaY, debug });
+            return await actor.sendQuery("AltPan:Pan", { deltaX, deltaY, forceVisual, debug });
           } catch (err) {
             console.error("[AltPan Experiment] panVisual failed:", err);
             return { ok: false, error: String(err) };
