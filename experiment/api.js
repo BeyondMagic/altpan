@@ -39,6 +39,14 @@ function ensureActorRegistered(extension) {
       esModuleURI: `resource://${RESOURCE_HOST}/experiment/AltPanActorChild.sys.mjs`,
     },
     allFrames: false,
+    safeForUntrustedWebProcess: true,
+    remoteTypes: [
+      "web",
+      "file",
+      "privilegedabout",
+      "privilegedmozilla",
+      "extension",
+    ],
   });
 
   actorRegistered = true;
