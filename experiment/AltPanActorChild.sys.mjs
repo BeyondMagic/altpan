@@ -1,7 +1,7 @@
 const MIN_SCALE = 1.0;
 const MAX_SCALE = 10.0;
 
-export class AltPanActorChild extends JSWindowActorChild {
+export class AltPanChild extends JSWindowActorChild {
   receiveMessage(message) {
     const win = this.contentWindow;
     if (!win) {

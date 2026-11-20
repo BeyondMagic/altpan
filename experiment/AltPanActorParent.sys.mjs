@@ -1,1 +1,1 @@
-export class AltPanActorParent extends JSWindowActorParent {}
+export class AltPanParent extends JSWindowActorParent {}
