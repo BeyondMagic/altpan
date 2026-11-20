@@ -53,6 +53,11 @@
   let zoomRafId = null;
   let isZoomInFlight = false;
 
+  // Track own momentum wheel events so sendWheelEvent doesn't cancel momentum
+  let lastMomentumDeltaX = 0;
+  let lastMomentumDeltaY = 0;
+  let lastMomentumSentAt = 0;
+
   const STYLE_ID = "altpan-cursor-lock-style";
 
   // --- Settings Synchronization ---
@@ -206,6 +211,9 @@
     queuedVisualX = 0;
     queuedVisualY = 0;
     isPanInFlight = true;
+    lastMomentumDeltaX = dx;
+    lastMomentumDeltaY = dy;
+    lastMomentumSentAt = performance.now();
 
     browser.runtime.sendMessage({
       type: "altpan:visual_pan",
@@ -264,7 +272,17 @@
     momentumRafId = requestAnimationFrame(step);
   }
 
-  function onInterruptMomentum() {
+  function onInterruptMomentum(e) {
+    if (
+      e &&
+      e.type === "wheel" &&
+      e.deltaMode === 0 &&
+      performance.now() - lastMomentumSentAt < 120 &&
+      Math.abs(e.deltaX - lastMomentumDeltaX) < 0.1 &&
+      Math.abs(e.deltaY - lastMomentumDeltaY) < 0.1
+    ) {
+      return;
+    }
     cancelMomentum();
   }
 

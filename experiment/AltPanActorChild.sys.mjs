@@ -18,12 +18,24 @@ export class AltPanChild extends JSWindowActorChild {
       const { deltaX, deltaY } = message.data;
       const beforeX = vv.pageLeft;
       const beforeY = vv.pageTop;
+      const x = vv.offsetLeft + vv.width / 2;
+      const y = vv.offsetTop + vv.height / 2;
+      const pixelOnlyFlag =
+        utils.WHEEL_EVENT_CAUSED_BY_NO_LINE_OR_PAGE_DELTA_DEVICE ??
+        utils.WHEEL_EVENT_CAUSED_BY_PIXEL_ONLY_DEVICE ??
+        0;
 
-      utils.scrollToVisual(
-        beforeX + deltaX,
-        beforeY + deltaY,
-        utils.UPDATE_TYPE_MAIN_THREAD,
-        utils.SCROLL_MODE_INSTANT
+      utils.sendWheelEvent(
+        x,
+        y,
+        deltaX,
+        deltaY,
+        0,
+        win.WheelEvent.DOM_DELTA_PIXEL,
+        0,
+        0,
+        0,
+        pixelOnlyFlag
       );
 
       return {
