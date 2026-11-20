@@ -116,6 +116,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return browser.altpan.zoomVisual({
       tabId,
       factor: Number(msg.factor) || 1.0,
+      deltaY: Number(msg.deltaY) || 0,
+      deltaMode: Number(msg.deltaMode) || 0,
       clientX: Number(msg.clientX) || 0,
       clientY: Number(msg.clientY) || 0
     }).then((res) => {

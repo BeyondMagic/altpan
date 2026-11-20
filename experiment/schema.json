@@ -42,6 +42,8 @@
             "properties": {
               "tabId": { "type": "integer" },
               "factor": { "type": "number" },
+              "deltaY": { "type": "number" },
+              "deltaMode": { "type": "integer" },
               "clientX": { "type": "number" },
               "clientY": { "type": "number" }
             },

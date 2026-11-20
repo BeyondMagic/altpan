@@ -46,12 +46,12 @@
   let queuedVisualX = 0;
   let queuedVisualY = 0;
 
-  // Smooth rAF pinch-zoom state
-  let zoomTargetScale = null;
-  let zoomAnchorVisualX = 0;
-  let zoomAnchorVisualY = 0;
-  let zoomRafId = null;
-  let isZoomInFlight = false;
+  // Anti-loop guard for our own synthesized APZ zoom wheel events
+  let lastSyntheticZoomAt = 0;
+  let lastSyntheticZoomX = 0;
+  let lastSyntheticZoomY = 0;
+  let lastSyntheticZoomDeltaY = 0;
+  let lastSyntheticZoomDeltaMode = 0;
 
   // Track own momentum wheel events so sendWheelEvent doesn't cancel momentum
   let lastMomentumDeltaX = 0;
@@ -329,7 +329,6 @@
     e.stopImmediatePropagation();
 
     cancelMomentum();
-    cancelZoom();
     cancelPanRaf();
     pendingDx = 0;
     pendingDy = 0;
@@ -446,63 +445,7 @@
     }
   }
 
-  // --- Built-in Smooth Cursor-Centered Pinch-Zoom ---
-
-  function cancelZoom() {
-    if (zoomRafId !== null) {
-      cancelAnimationFrame(zoomRafId);
-      zoomRafId = null;
-    }
-    zoomTargetScale = null;
-  }
-
-  function stepZoom() {
-    zoomRafId = null;
-    if (zoomTargetScale === null) return;
-    if (isZoomInFlight) {
-      zoomRafId = requestAnimationFrame(stepZoom);
-      return;
-    }
-
-    const vv = window.visualViewport;
-    const curScale = (vv && vv.scale) ? vv.scale : 1.0;
-    const ratio = zoomTargetScale / curScale;
-
-    if (Math.abs(ratio - 1.0) < 0.002) {
-      if (zoomTargetScale === 1.0 && curScale > 1.0005 && typeof browser !== "undefined" && browser.runtime) {
-        isZoomInFlight = true;
-        browser.runtime.sendMessage({
-          type: "altpan:visual_zoom",
-          factor: 1.0 / curScale,
-          clientX: zoomAnchorVisualX,
-          clientY: zoomAnchorVisualY
-        }).catch(() => {}).finally(() => {
-          isZoomInFlight = false;
-        });
-      }
-      zoomTargetScale = null;
-      return;
-    }
-
-    const stepFactor = Math.pow(ratio, 0.35);
-    if (typeof browser === "undefined" || !browser.runtime) {
-      zoomTargetScale = null;
-      return;
-    }
-
-    isZoomInFlight = true;
-    browser.runtime.sendMessage({
-      type: "altpan:visual_zoom",
-      factor: stepFactor,
-      clientX: zoomAnchorVisualX,
-      clientY: zoomAnchorVisualY
-    }).catch(() => {}).finally(() => {
-      isZoomInFlight = false;
-      if (zoomTargetScale !== null && zoomRafId === null) {
-        zoomRafId = requestAnimationFrame(stepZoom);
-      }
-    });
-  }
+  // --- Built-in Cursor-Centered Pinch-Zoom ---
 
   function onWheelZoom(e) {
     const mod = settings.pinchZoomModifier;
@@ -511,38 +454,49 @@
     if (!isModifierActive(e, mod)) return;
     if (!e.deltaY) return;
 
+    const now = performance.now();
+    if (
+      now - lastSyntheticZoomAt < 150 &&
+      Math.abs(e.clientX - lastSyntheticZoomX) < 1 &&
+      Math.abs(e.clientY - lastSyntheticZoomY) < 1 &&
+      Math.abs(e.deltaY - lastSyntheticZoomDeltaY) < 0.01 &&
+      e.deltaMode === lastSyntheticZoomDeltaMode
+    ) {
+      // Allow our own synthesized APZ zoom wheel event to reach Firefox natively
+      lastSyntheticZoomAt = 0;
+      return;
+    }
+
     e.preventDefault();
     e.stopImmediatePropagation();
     cancelMomentum();
 
-    // Normalize wheel delta to pixels across pixel/line/page deltaMode
+    lastSyntheticZoomAt = now;
+    lastSyntheticZoomX = e.clientX;
+    lastSyntheticZoomY = e.clientY;
+    lastSyntheticZoomDeltaY = e.deltaY;
+    lastSyntheticZoomDeltaMode = e.deltaMode;
+
+    // Fallback factor in case no mousewheel.*.action=5 pref is configured
     let pixelDeltaY = e.deltaY;
     if (e.deltaMode === 1) {
       pixelDeltaY *= 32;
     } else if (e.deltaMode === 2) {
       pixelDeltaY *= window.innerHeight;
     }
+    const factor = Math.exp(-pixelDeltaY * 0.0008);
 
-    const vv = window.visualViewport;
-    const curScale = (vv && vv.scale) ? vv.scale : 1.0;
-    if (zoomTargetScale === null) {
-      zoomTargetScale = curScale;
-    }
-
-    // ~8% scale change per discrete wheel notch (pixelDeltaY ~ 96)
-    const wheelMultiplier = Math.exp(-pixelDeltaY * 0.0008);
-    zoomTargetScale = Math.min(Math.max(zoomTargetScale * wheelMultiplier, 1.0), 10.0);
-
-    if (zoomTargetScale < 1.015 && pixelDeltaY > 0) {
-      zoomTargetScale = 1.0;
-    }
-
-    // e.clientX/Y in Firefox are relative to the layout viewport; convert to visual viewport coordinates
-    zoomAnchorVisualX = e.clientX - (vv ? vv.offsetLeft : 0);
-    zoomAnchorVisualY = e.clientY - (vv ? vv.offsetTop : 0);
-
-    if (!zoomRafId) {
-      zoomRafId = requestAnimationFrame(stepZoom);
+    if (typeof browser !== "undefined" && browser.runtime) {
+      browser.runtime.sendMessage({
+        type: "altpan:visual_zoom",
+        factor,
+        deltaY: e.deltaY,
+        deltaMode: e.deltaMode,
+        clientX: e.clientX,
+        clientY: e.clientY
+      }).catch((err) => {
+        console.warn("[AltPan] visual_zoom sendMessage failed:", err);
+      });
     }
   }
 
@@ -580,7 +534,6 @@
     queuedVisualX = 0;
     queuedVisualY = 0;
     cancelMomentum();
-    cancelZoom();
   }
 
   function onVisibilityChange() {
@@ -589,7 +542,6 @@
       queuedVisualX = 0;
       queuedVisualY = 0;
       cancelMomentum();
-      cancelZoom();
     }
   }
 

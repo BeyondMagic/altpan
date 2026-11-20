@@ -46,11 +46,41 @@ export class AltPanChild extends JSWindowActorChild {
     }
 
     if (message.name === "AltPan:Zoom") {
-      const { factor, clientX, clientY } = message.data;
+      const {
+        factor,
+        deltaY,
+        deltaMode,
+        clientX,
+        clientY,
+        nativeZoomModifier,
+      } = message.data;
+
+      // Primary path: delegate to Firefox's native APZ compositor zoom via sendWheelEvent
+      // using whichever modifier has mousewheel.with_*.action === 5 in about:config.
+      if (nativeZoomModifier !== null && nativeZoomModifier !== undefined && deltaY) {
+        const lineDeltaY = deltaMode === 1 ? Math.sign(deltaY) : 0;
+        const options = utils.WHEEL_EVENT_CUSTOMIZED_BY_USER_PREFS ?? 0;
+
+        utils.sendWheelEvent(
+          clientX,
+          clientY,
+          0,
+          deltaY,
+          0,
+          deltaMode,
+          nativeZoomModifier,
+          0,
+          lineDeltaY,
+          options
+        );
+
+        return { ok: true, mode: "native-apz", scale: vv.scale };
+      }
+
+      // Fallback when no mousewheel.*.action is set to 5
       const oldScale = vv.scale || 1.0;
       let newScale = Math.min(Math.max(oldScale * factor, MIN_SCALE), MAX_SCALE);
 
-      // Snap cleanly back to 1.0 near minimum zoom to avoid residual sub-1% drift
       if (newScale < 1.002 && factor < 1.0) {
         newScale = 1.0;
       }
@@ -59,7 +89,6 @@ export class AltPanChild extends JSWindowActorChild {
         return { ok: true, scale: oldScale };
       }
 
-      // Keep the document coordinate currently under (clientX, clientY) anchored
       const ratio = 1.0 - oldScale / newScale;
       const targetX = vv.pageLeft + clientX * ratio;
       const targetY = vv.pageTop + clientY * ratio;
@@ -72,7 +101,7 @@ export class AltPanChild extends JSWindowActorChild {
         utils.SCROLL_MODE_INSTANT
       );
 
-      return { ok: true, scale: vv.scale };
+      return { ok: true, mode: "fallback", scale: vv.scale };
     }
 
     return { ok: false, reason: "unknown-message" };

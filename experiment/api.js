@@ -53,6 +53,27 @@ function ensureActorRegistered(extension) {
   console.info("[AltPan Experiment] Registered AltPan actor:", extension.rootURI.spec);
 }
 
+const MOUSEWHEEL_ZOOM_PREFS = [
+  ["mousewheel.with_alt.action", 0x01],
+  ["mousewheel.with_control.action", 0x02],
+  ["mousewheel.with_shift.action", 0x04],
+  ["mousewheel.with_meta.action", 0x08],
+  ["mousewheel.default.action", 0x00],
+];
+
+function findNativePinchModifier() {
+  for (const [prefName, modFlag] of MOUSEWHEEL_ZOOM_PREFS) {
+    try {
+      if (Services.prefs.getIntPref(prefName, 0) === 5) {
+        return modFlag;
+      }
+    } catch {
+      // Ignore missing pref
+    }
+  }
+  return null;
+}
+
 function getTopActor(extension, tabId) {
   ensureActorRegistered(extension);
   const tab = extension.tabManager.get(tabId, null);
@@ -104,16 +125,20 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
           }
         },
 
-        async zoomVisual({ tabId, factor, clientX, clientY }) {
+        async zoomVisual({ tabId, factor, deltaY = 0, deltaMode = 0, clientX, clientY }) {
           try {
             const actor = getTopActor(extension, tabId);
             if (!actor) {
               return { ok: false, reason: "no-actor" };
             }
+            const nativeZoomModifier = findNativePinchModifier();
             return await actor.sendQuery("AltPan:Zoom", {
               factor,
+              deltaY,
+              deltaMode,
               clientX,
               clientY,
+              nativeZoomModifier,
             });
           } catch (err) {
             console.error("[AltPan Experiment] zoomVisual failed:", err);
