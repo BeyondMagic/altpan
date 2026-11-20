@@ -1,12 +1,13 @@
 /**
  * AltPan Background Script (Manifest V3)
- * Handles native messaging bridge to altpan_host for APZ visual viewport panning,
- * initial settings configuration, and toolbar badge state.
+ * Routes visual-viewport pan and pinch-zoom requests through the built-in
+ * WebExtension Experiment API (browser.altpan), manages defaults, and updates the badge.
  */
 
 const DEFAULT_SETTINGS = {
   enabled: true,
   modifierKey: "None", // "None", "Alt", "Shift", "Ctrl", "Meta"
+  pinchZoomModifier: "Off", // "Off", "Alt", "Shift", "Ctrl", "Meta"
   sensitivity: 0.5,
   momentumEnabled: true,
   friction: 0.92,
@@ -17,26 +18,12 @@ const DEFAULT_SETTINGS = {
   ]
 };
 
-let nativePort = null;
-
-function getNativePort() {
-  if (nativePort) return nativePort;
-  try {
-    nativePort = browser.runtime.connectNative("altpan_host");
-    nativePort.onDisconnect.addListener((p) => {
-      const err = (p && p.error) || browser.runtime.lastError;
-      console.warn("[AltPan] Native port disconnected:", err);
-      nativePort = null;
-    });
-    nativePort.onMessage.addListener((res) => {
-      // Async responses from host if needed
-    });
-    return nativePort;
-  } catch (err) {
-    console.warn("[AltPan] Failed to connect native host:", err);
-    nativePort = null;
-    return null;
-  }
+function hasExperimentAPI() {
+  return !!(
+    typeof browser !== "undefined" &&
+    browser.altpan &&
+    typeof browser.altpan.panVisual === "function"
+  );
 }
 
 async function getStorage() {
@@ -75,85 +62,57 @@ function updateBadge(enabled) {
   }
 }
 
-// Test native host connection on script load
-function pingNativeHost() {
-  try {
-    browser.runtime.sendNativeMessage("altpan_host", { type: "ping" })
-      .then((res) => {
-        console.log("[AltPan] Native bridge startup ping response:", res);
-      })
-      .catch((err) => {
-        console.warn("[AltPan] Native bridge startup ping error:", err);
-      });
-  } catch (e) {
-    console.warn("[AltPan] Failed to initiate native ping:", e);
-  }
-}
-pingNativeHost();
-
-// Lifecycle listeners
 browser.runtime.onInstalled.addListener(() => {
   initializeSettings();
-  pingNativeHost();
 });
 
 browser.runtime.onStartup.addListener(() => {
   initializeSettings();
-  pingNativeHost();
 });
 
-// React to live settings changes
-browser.storage.onChanged.addListener((changes, areaName) => {
+browser.storage.onChanged.addListener((changes) => {
   if (changes.enabled) {
     updateBadge(changes.enabled.newValue);
   }
 });
 
-// Message router between content scripts, popup, and native host
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (!msg || !msg.type) return;
 
-  // 1. Health check from popup UI
-  if (msg.type === "altpan:check_native") {
-    return new Promise((resolve) => {
-      try {
-        browser.runtime.sendNativeMessage("altpan_host", { type: "ping" })
-          .then((res) => {
-            resolve({
-              connected: !!(res && res.ok),
-              uinput: !!(res && res.uinput_active)
-            });
-          })
-          .catch((err) => {
-            resolve({
-              connected: false,
-              error: String(err && err.message ? err.message : err)
-            });
-          });
-      } catch (e) {
-        resolve({ connected: false, error: String(e) });
-      }
+  if (msg.type === "altpan:check_status") {
+    if (!hasExperimentAPI()) {
+      return Promise.resolve({ available: false });
+    }
+    return browser.altpan.getCapabilities()
+      .then((res) => ({ available: !!(res && res.available) }))
+      .catch((err) => ({ available: false, error: String(err) }));
+  }
+
+  if (!sender.tab || sender.tab.id == null) {
+    return;
+  }
+  const tabId = sender.tab.id;
+
+  if (msg.type === "altpan:visual_pan") {
+    if (!hasExperimentAPI()) {
+      return Promise.resolve({ ok: false, reason: "experiment-disabled" });
+    }
+    return browser.altpan.panVisual({
+      tabId,
+      deltaX: Number(msg.deltaX) || 0,
+      deltaY: Number(msg.deltaY) || 0
     });
   }
 
-  // 2. High-performance native pan dispatch for pinch-zoomed viewports
-  if (msg.type === "altpan:native_pan") {
-    const port = getNativePort();
-    if (port) {
-      try {
-        port.postMessage({
-          type: "pan",
-          deltaX: msg.deltaX,
-          deltaY: msg.deltaY,
-          scale: msg.scale || 1.0,
-          sensitivity: msg.sensitivity || 1.0
-        });
-        return Promise.resolve({ ok: true });
-      } catch (e) {
-        nativePort = null;
-        return Promise.resolve({ ok: false, error: String(e) });
-      }
+  if (msg.type === "altpan:visual_zoom") {
+    if (!hasExperimentAPI()) {
+      return Promise.resolve({ ok: false, reason: "experiment-disabled" });
     }
-    return Promise.resolve({ ok: false, error: "Native port unavailable" });
+    return browser.altpan.zoomVisual({
+      tabId,
+      factor: Number(msg.factor) || 1.0,
+      clientX: Number(msg.clientX) || 0,
+      clientY: Number(msg.clientY) || 0
+    });
   }
 });

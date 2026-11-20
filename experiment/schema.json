@@ -1,0 +1,54 @@
+[
+  {
+    "namespace": "altpan",
+    "functions": [
+      {
+        "name": "getCapabilities",
+        "type": "function",
+        "async": true,
+        "parameters": [],
+        "returns": {
+          "type": "object",
+          "properties": {
+            "available": { "type": "boolean" }
+          }
+        }
+      },
+      {
+        "name": "panVisual",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "options",
+            "type": "object",
+            "properties": {
+              "tabId": { "type": "integer" },
+              "deltaX": { "type": "number" },
+              "deltaY": { "type": "number" }
+            },
+            "required": ["tabId", "deltaX", "deltaY"]
+          }
+        ]
+      },
+      {
+        "name": "zoomVisual",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "options",
+            "type": "object",
+            "properties": {
+              "tabId": { "type": "integer" },
+              "factor": { "type": "number" },
+              "clientX": { "type": "number" },
+              "clientY": { "type": "number" }
+            },
+            "required": ["tabId", "factor", "clientX", "clientY"]
+          }
+        ]
+      }
+    ]
+  }
+]

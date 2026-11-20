@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AltPan - Drag-to-Pan for Firefox",
-  "version": "1.0.0",
-  "description": "Smoothly pan zoomed webpages and viewports by holding Alt and dragging with the middle mouse button.",
+  "version": "1.1.0",
+  "description": "Smoothly pan zoomed webpages and visual viewports with a 1:1 hand-tool drag gesture.",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -12,8 +12,7 @@
   },
   "permissions": [
     "storage",
-    "activeTab",
-    "nativeMessaging"
+    "activeTab"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -36,6 +35,16 @@
       "all_frames": true
     }
   ],
+  "experiment_apis": {
+    "altpan": {
+      "schema": "experiment/schema.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "paths": [["altpan"]],
+        "script": "experiment/api.js"
+      }
+    }
+  },
   "browser_specific_settings": {
     "gecko": {
       "id": "altpan@terra.local",

@@ -11,7 +11,7 @@
     <div class="brand">
       <img src="../icons/icon-32.png" alt="AltPan Logo" class="brand-logo" width="22" height="22">
       <h1 class="brand-name">AltPan</h1>
-      <span class="version-tag">v1.0.0</span>
+      <span class="version-tag">v1.1.0</span>
     </div>
     <div id="site-status-pill" class="status-pill status-active">
       <span class="status-dot"></span>
@@ -34,34 +34,50 @@
       </div>
     </div>
 
-    <!-- Native Bridge Status (for APZ Pinch-Zoom) -->
+    <!-- Experiment API Status (for APZ Pinch-Zoom) -->
     <div class="setting-card">
       <div class="setting-row">
         <div class="setting-info">
-          <span class="setting-title">APZ Native Bridge</span>
-          <span id="native-desc" class="setting-desc">Checking connection...</span>
+          <span class="setting-title">APZ Visual Viewport API</span>
+          <span id="experiment-desc" class="setting-desc">Checking status...</span>
         </div>
-        <span id="native-status-badge" class="badge-value">Checking...</span>
+        <span id="experiment-status-badge" class="badge-value">Checking...</span>
       </div>
-      <div id="native-help" class="help-box" style="display: none;">
-        <span>Pinch-zoom pan requires native helper:</span>
-        <code>./install_host.sh</code>
+      <div id="experiment-help" class="help-box" style="display: none;">
+        <span>Enable in <code>about:config</code>:</span>
+        <code>extensions.experiments.enabled = true</code>
       </div>
     </div>
 
-    <!-- Modifier Key & Sensitivity -->
+    <!-- Modifier Keys & Sensitivity -->
     <div class="setting-card">
       <div class="setting-row">
         <div class="setting-info">
-          <label for="modifier-select" class="setting-title">Modifier Key</label>
+          <label for="modifier-select" class="setting-title">Pan Modifier Key</label>
           <span class="setting-desc">Key held during middle-click drag</span>
         </div>
         <select id="modifier-select" class="select-input">
-          <option value="None" selected>None (Middle Click Only) (Default)</option>
+          <option value="None" selected>None (Middle Click Only)</option>
           <option value="Alt">Alt</option>
           <option value="Shift">Shift</option>
           <option value="Ctrl">Ctrl</option>
           <option value="Meta">Meta / Command</option>
+        </select>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label for="pinch-zoom-select" class="setting-title">Pinch-Zoom Wheel</label>
+          <span class="setting-desc">Smooth cursor-centered zoom</span>
+        </div>
+        <select id="pinch-zoom-select" class="select-input">
+          <option value="Off" selected>Off (Firefox Native)</option>
+          <option value="Alt">Alt + Wheel</option>
+          <option value="Ctrl">Ctrl + Wheel</option>
+          <option value="Shift">Shift + Wheel</option>
+          <option value="Meta">Meta + Wheel</option>
         </select>
       </div>
 

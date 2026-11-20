@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const elements = {
     enableToggle: document.getElementById("enable-toggle"),
     modifierSelect: document.getElementById("modifier-select"),
+    pinchZoomSelect: document.getElementById("pinch-zoom-select"),
     sensitivitySlider: document.getElementById("sensitivity-slider"),
     sensitivityValue: document.getElementById("sensitivity-value"),
     momentumToggle: document.getElementById("momentum-toggle"),
@@ -17,14 +18,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     siteStatusPill: document.getElementById("site-status-pill"),
     siteStatusText: document.getElementById("site-status-text"),
     saveStatus: document.getElementById("save-status"),
-    nativeDesc: document.getElementById("native-desc"),
-    nativeStatusBadge: document.getElementById("native-status-badge"),
-    nativeHelp: document.getElementById("native-help")
+    experimentDesc: document.getElementById("experiment-desc"),
+    experimentStatusBadge: document.getElementById("experiment-status-badge"),
+    experimentHelp: document.getElementById("experiment-help")
   };
 
   const DEFAULT_SETTINGS = {
     enabled: true,
     modifierKey: "None",
+    pinchZoomModifier: "Off",
     sensitivity: 0.5,
     momentumEnabled: true,
     friction: 0.92,
@@ -62,27 +64,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  async function checkNativeBridge() {
+  async function checkExperimentStatus() {
     try {
-      const res = await browser.runtime.sendMessage({ type: "altpan:check_native" });
-      elements.nativeStatusBadge.className = "badge-value";
+      const res = await browser.runtime.sendMessage({ type: "altpan:check_status" });
+      elements.experimentStatusBadge.className = "badge-value";
 
-      if (res && res.connected) {
-        elements.nativeStatusBadge.textContent = "Connected";
-        elements.nativeStatusBadge.classList.add("badge-connected");
-        elements.nativeDesc.textContent = "Ready for pinch-zoomed viewports";
-        elements.nativeHelp.style.display = "none";
+      if (res && res.available) {
+        elements.experimentStatusBadge.textContent = "Active";
+        elements.experimentStatusBadge.classList.add("badge-connected");
+        elements.experimentDesc.textContent = "Built-in APZ visual viewport pan ready";
+        elements.experimentHelp.style.display = "none";
       } else {
-        elements.nativeStatusBadge.textContent = "Offline";
-        elements.nativeStatusBadge.classList.add("badge-offline");
-        elements.nativeDesc.textContent = "Required for pinch-zoom pan";
-        elements.nativeHelp.style.display = "flex";
+        elements.experimentStatusBadge.textContent = "Disabled";
+        elements.experimentStatusBadge.classList.add("badge-offline");
+        elements.experimentDesc.textContent = "Required for pinch-zoom visual pan";
+        elements.experimentHelp.style.display = "flex";
       }
-    } catch (e) {
-      elements.nativeStatusBadge.textContent = "Offline";
-      elements.nativeStatusBadge.classList.add("badge-offline");
-      elements.nativeDesc.textContent = "Required for pinch-zoom pan";
-      elements.nativeHelp.style.display = "flex";
+    } catch {
+      elements.experimentStatusBadge.textContent = "Disabled";
+      elements.experimentStatusBadge.classList.add("badge-offline");
+      elements.experimentDesc.textContent = "Required for pinch-zoom visual pan";
+      elements.experimentHelp.style.display = "flex";
     }
   }
 
@@ -108,7 +110,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           currentHostname = url.hostname.replace(/^www\./, "");
         }
       }
-    } catch (e) {
+    } catch {
       // Ignore internal pages
     }
   }
@@ -122,6 +124,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     elements.enableToggle.checked = merged.enabled;
     elements.modifierSelect.value = merged.modifierKey;
+    elements.pinchZoomSelect.value = merged.pinchZoomModifier;
     elements.sensitivitySlider.value = merged.sensitivity;
     elements.sensitivityValue.textContent = Number(merged.sensitivity).toFixed(1) + "x";
 
@@ -140,8 +143,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const excluded = isHostExcluded(currentHostname, merged.blacklist || []);
     updateStatusPill(merged.enabled, excluded);
 
-    // Live check native messaging companion
-    await checkNativeBridge();
+    await checkExperimentStatus();
   }
 
   async function saveSettings() {
@@ -149,6 +151,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const settings = {
       enabled: elements.enableToggle.checked,
       modifierKey: elements.modifierSelect.value,
+      pinchZoomModifier: elements.pinchZoomSelect.value,
       sensitivity: parseFloat(elements.sensitivitySlider.value),
       momentumEnabled: elements.momentumToggle.checked,
       friction: parseFloat(elements.frictionSlider.value),
@@ -174,6 +177,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   elements.enableToggle.addEventListener("change", saveSettings);
   elements.modifierSelect.addEventListener("change", saveSettings);
+  elements.pinchZoomSelect.addEventListener("change", saveSettings);
 
   elements.sensitivitySlider.addEventListener("input", (e) => {
     elements.sensitivityValue.textContent = Number(e.target.value).toFixed(1) + "x";
