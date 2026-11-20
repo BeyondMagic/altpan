@@ -171,16 +171,20 @@
       return;
     }
 
-    if (typeof browser !== "undefined" && browser.runtime) {
+    const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
+
+    if (scale > 1.02 && typeof browser !== "undefined" && browser.runtime) {
       browser.runtime.sendMessage({
         type: "altpan:visual_pan",
         deltaX: remX,
         deltaY: remY
       }).then((res) => {
         if (!res || !res.ok) {
+          console.warn("[AltPan] visual_pan failed, falling back to scrollBy:", res);
           window.scrollBy({ left: remX, top: remY, behavior: "instant" });
         }
-      }).catch(() => {
+      }).catch((err) => {
+        console.warn("[AltPan] visual_pan sendMessage failed:", err);
         window.scrollBy({ left: remX, top: remY, behavior: "instant" });
       });
     } else {

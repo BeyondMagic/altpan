@@ -20,7 +20,11 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
     }
 
     const resProto = getResProtoHandler();
-    resProto.setSubstitution(RESOURCE_HOST, this.extension.rootURI);
+    resProto.setSubstitutionWithFlags(
+      RESOURCE_HOST,
+      this.extension.rootURI,
+      Ci.nsISubstitutingProtocolHandler.ALLOW_CONTENT_ACCESS
+    );
 
     try {
       ChromeUtils.unregisterWindowActor(ACTOR_NAME);
@@ -39,6 +43,7 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
     });
 
     this.#registered = true;
+    console.info("[AltPan Experiment] Registered AltPan actor:", this.extension.rootURI.spec);
   }
 
   #getTopActor(extension, tabId) {
@@ -46,6 +51,7 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
     const tab = extension.tabManager.get(tabId, null);
     const windowGlobal = tab?.browser?.browsingContext?.currentWindowGlobal;
     if (!windowGlobal) {
+      console.warn("[AltPan Experiment] Missing windowGlobal for tabId:", tabId, "tab:", !!tab);
       return null;
     }
     return windowGlobal.getActor(ACTOR_NAME);
@@ -69,6 +75,7 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
             }
             return await actor.sendQuery("AltPan:Pan", { deltaX, deltaY });
           } catch (err) {
+            console.error("[AltPan Experiment] panVisual failed:", err);
             return { ok: false, error: String(err) };
           }
         },
@@ -85,6 +92,7 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
               clientY,
             });
           } catch (err) {
+            console.error("[AltPan Experiment] zoomVisual failed:", err);
             return { ok: false, error: String(err) };
           }
         },

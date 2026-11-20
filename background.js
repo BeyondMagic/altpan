@@ -101,6 +101,11 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       tabId,
       deltaX: Number(msg.deltaX) || 0,
       deltaY: Number(msg.deltaY) || 0
+    }).then((res) => {
+      if (!res || !res.ok) {
+        console.warn("[AltPan] panVisual returned error:", res);
+      }
+      return res;
     });
   }
 
@@ -113,6 +118,11 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       factor: Number(msg.factor) || 1.0,
       clientX: Number(msg.clientX) || 0,
       clientY: Number(msg.clientY) || 0
+    }).then((res) => {
+      if (!res || !res.ok) {
+        console.warn("[AltPan] zoomVisual returned error:", res);
+      }
+      return res;
     });
   }
 });
