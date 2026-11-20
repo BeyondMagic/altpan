@@ -31,6 +31,19 @@ export class AltPanChild extends JSWindowActorChild {
       return { ok: false, reason: "no-utils" };
     }
 
+    if (message.name === "AltPan:Snapshot") {
+      const docEl = win.document?.documentElement;
+      return {
+        ok: true,
+        topScale: vv.scale,
+        pageLeft: vv.pageLeft,
+        pageTop: vv.pageTop,
+        docOverflow: docEl
+          ? `${docEl.scrollWidth}/${docEl.clientWidth} x ${docEl.scrollHeight}/${docEl.clientHeight}`
+          : null,
+      };
+    }
+
     if (message.name === "AltPan:Pan") {
       const { deltaX, deltaY, forceVisual, debug } = message.data;
       const beforeX = vv.pageLeft;

@@ -226,7 +226,7 @@
 
     const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
 
-    if (scale > 1.02 && typeof browser !== "undefined" && browser.runtime) {
+    if ((scale > 1.02 || settings.forceVisualPan) && typeof browser !== "undefined" && browser.runtime) {
       queuedVisualX += remX;
       queuedVisualY += remY;
       pumpVisualPan();
