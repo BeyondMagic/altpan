@@ -5,61 +5,77 @@ const { ExtensionCommon } = ChromeUtils.importESModule(
 const ACTOR_NAME = "AltPan";
 const RESOURCE_HOST = "altpan";
 
+let actorRegistered = false;
+
 function getResProtoHandler() {
   return Services.io
     .getProtocolHandler("resource")
     .QueryInterface(Ci.nsIResProtocolHandler);
 }
 
+function ensureActorRegistered(extension) {
+  if (actorRegistered) {
+    return;
+  }
+
+  const resProto = getResProtoHandler();
+  resProto.setSubstitutionWithFlags(
+    RESOURCE_HOST,
+    extension.rootURI,
+    Ci.nsISubstitutingProtocolHandler.ALLOW_CONTENT_ACCESS
+  );
+
+  try {
+    ChromeUtils.unregisterWindowActor(ACTOR_NAME);
+  } catch {
+    // Not previously registered
+  }
+
+  ChromeUtils.registerWindowActor(ACTOR_NAME, {
+    parent: {
+      esModuleURI: `resource://${RESOURCE_HOST}/experiment/AltPanActorParent.sys.mjs`,
+    },
+    child: {
+      esModuleURI: `resource://${RESOURCE_HOST}/experiment/AltPanActorChild.sys.mjs`,
+    },
+    allFrames: false,
+  });
+
+  actorRegistered = true;
+  console.info("[AltPan Experiment] Registered AltPan actor:", extension.rootURI.spec);
+}
+
+function getTopActor(extension, tabId) {
+  ensureActorRegistered(extension);
+  const tab = extension.tabManager.get(tabId, null);
+  const windowGlobal = tab?.browser?.browsingContext?.currentWindowGlobal;
+  if (!windowGlobal) {
+    console.warn("[AltPan Experiment] Missing windowGlobal for tabId:", tabId, "tab:", !!tab);
+    return null;
+  }
+  return windowGlobal.getActor(ACTOR_NAME);
+}
+
+function unregisterActor() {
+  try {
+    ChromeUtils.unregisterWindowActor(ACTOR_NAME);
+  } catch {
+    // Ignore if already unregistered
+  }
+
+  try {
+    getResProtoHandler().setSubstitution(RESOURCE_HOST, null);
+  } catch {
+    // Ignore
+  }
+
+  actorRegistered = false;
+}
+
 var altpan = class extends ExtensionCommon.ExtensionAPI {
-  #registered = false;
-
-  #ensureRegistered() {
-    if (this.#registered) {
-      return;
-    }
-
-    const resProto = getResProtoHandler();
-    resProto.setSubstitutionWithFlags(
-      RESOURCE_HOST,
-      this.extension.rootURI,
-      Ci.nsISubstitutingProtocolHandler.ALLOW_CONTENT_ACCESS
-    );
-
-    try {
-      ChromeUtils.unregisterWindowActor(ACTOR_NAME);
-    } catch {
-      // Not previously registered
-    }
-
-    ChromeUtils.registerWindowActor(ACTOR_NAME, {
-      parent: {
-        esModuleURI: `resource://${RESOURCE_HOST}/experiment/AltPanActorParent.sys.mjs`,
-      },
-      child: {
-        esModuleURI: `resource://${RESOURCE_HOST}/experiment/AltPanActorChild.sys.mjs`,
-      },
-      allFrames: false,
-    });
-
-    this.#registered = true;
-    console.info("[AltPan Experiment] Registered AltPan actor:", this.extension.rootURI.spec);
-  }
-
-  #getTopActor(extension, tabId) {
-    this.#ensureRegistered();
-    const tab = extension.tabManager.get(tabId, null);
-    const windowGlobal = tab?.browser?.browsingContext?.currentWindowGlobal;
-    if (!windowGlobal) {
-      console.warn("[AltPan Experiment] Missing windowGlobal for tabId:", tabId, "tab:", !!tab);
-      return null;
-    }
-    return windowGlobal.getActor(ACTOR_NAME);
-  }
-
   getAPI(context) {
     const { extension } = context;
-    this.#ensureRegistered();
+    ensureActorRegistered(extension);
 
     return {
       altpan: {
@@ -69,7 +85,7 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
 
         async panVisual({ tabId, deltaX, deltaY }) {
           try {
-            const actor = this.#getTopActor(extension, tabId);
+            const actor = getTopActor(extension, tabId);
             if (!actor) {
               return { ok: false, reason: "no-actor" };
             }
@@ -82,7 +98,7 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
 
         async zoomVisual({ tabId, factor, clientX, clientY }) {
           try {
-            const actor = this.#getTopActor(extension, tabId);
+            const actor = getTopActor(extension, tabId);
             if (!actor) {
               return { ok: false, reason: "no-actor" };
             }
@@ -104,19 +120,6 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
     if (isAppShutdown) {
       return;
     }
-
-    try {
-      ChromeUtils.unregisterWindowActor(ACTOR_NAME);
-    } catch {
-      // Ignore if already unregistered
-    }
-
-    try {
-      getResProtoHandler().setSubstitution(RESOURCE_HOST, null);
-    } catch {
-      // Ignore
-    }
-
-    this.#registered = false;
+    unregisterActor();
   }
 };
