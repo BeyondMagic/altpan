@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     frictionValue: document.getElementById("friction-value"),
     blacklistInput: document.getElementById("blacklist-input"),
     addCurrentBtn: document.getElementById("add-current-btn"),
+    debugToggle: document.getElementById("debug-toggle"),
     siteStatusPill: document.getElementById("site-status-pill"),
     siteStatusText: document.getElementById("site-status-text"),
     saveStatus: document.getElementById("save-status"),
@@ -30,6 +31,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     sensitivity: 0.5,
     momentumEnabled: true,
     friction: 0.92,
+    debugMode: false,
     blacklist: [
       "figma.com",
       "miro.com",
@@ -139,6 +141,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     elements.blacklistInput.value = (merged.blacklist || []).join("\n");
+    elements.debugToggle.checked = !!merged.debugMode;
 
     const excluded = isHostExcluded(currentHostname, merged.blacklist || []);
     updateStatusPill(merged.enabled, excluded);
@@ -155,6 +158,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       sensitivity: parseFloat(elements.sensitivitySlider.value),
       momentumEnabled: elements.momentumToggle.checked,
       friction: parseFloat(elements.frictionSlider.value),
+      debugMode: elements.debugToggle.checked,
       blacklist: list
     };
 
@@ -199,6 +203,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   elements.blacklistInput.addEventListener("input", saveSettings);
+  elements.debugToggle.addEventListener("change", saveSettings);
 
   elements.addCurrentBtn.addEventListener("click", () => {
     if (!currentHostname) return;

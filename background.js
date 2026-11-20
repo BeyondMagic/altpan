@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   sensitivity: 0.5,
   momentumEnabled: true,
   friction: 0.92,
+  debugMode: false,
   blacklist: [
     "figma.com",
     "miro.com",
@@ -100,7 +101,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return browser.altpan.panVisual({
       tabId,
       deltaX: Number(msg.deltaX) || 0,
-      deltaY: Number(msg.deltaY) || 0
+      deltaY: Number(msg.deltaY) || 0,
+      debug: !!msg.debug
     }).then((res) => {
       if (!res || !res.ok) {
         console.warn("[AltPan] panVisual returned error:", res);
@@ -119,7 +121,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       deltaY: Number(msg.deltaY) || 0,
       deltaMode: Number(msg.deltaMode) || 0,
       clientX: Number(msg.clientX) || 0,
-      clientY: Number(msg.clientY) || 0
+      clientY: Number(msg.clientY) || 0,
+      debug: !!msg.debug
     }).then((res) => {
       if (!res || !res.ok) {
         console.warn("[AltPan] zoomVisual returned error:", res);

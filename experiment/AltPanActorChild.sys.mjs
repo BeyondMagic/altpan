@@ -1,6 +1,23 @@
 const MIN_SCALE = 1.0;
 const MAX_SCALE = 10.0;
 
+function describeElement(el, win) {
+  if (!el) return null;
+  const tag = el.tagName || "NODE";
+  const id = el.id ? `#${el.id}` : "";
+  const cls = typeof el.className === "string" && el.className.trim()
+    ? `.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`
+    : "";
+  let extra = "";
+  try {
+    const cs = win.getComputedStyle(el);
+    extra = ` (ov=${cs.overflowX}/${cs.overflowY}, sw=${el.scrollWidth}/${el.clientWidth}, sh=${el.scrollHeight}/${el.clientHeight})`;
+  } catch {
+    // Ignore
+  }
+  return `${tag}${id}${cls}${extra}`;
+}
+
 export class AltPanChild extends JSWindowActorChild {
   receiveMessage(message) {
     const win = this.contentWindow;
@@ -15,7 +32,7 @@ export class AltPanChild extends JSWindowActorChild {
     }
 
     if (message.name === "AltPan:Pan") {
-      const { deltaX, deltaY } = message.data;
+      const { deltaX, deltaY, debug } = message.data;
       const beforeX = vv.pageLeft;
       const beforeY = vv.pageTop;
       const x = vv.offsetLeft + vv.width / 2;
@@ -38,11 +55,36 @@ export class AltPanChild extends JSWindowActorChild {
         pixelOnlyFlag
       );
 
-      return {
+      const res = {
         ok: true,
         movedX: vv.pageLeft - beforeX,
         movedY: vv.pageTop - beforeY,
       };
+
+      if (debug) {
+        let hitEl = null;
+        try {
+          hitEl = win.document?.elementFromPoint(vv.width / 2, vv.height / 2);
+        } catch {
+          // Ignore
+        }
+        const docEl = win.document?.documentElement;
+        res.debug = {
+          topScale: vv.scale,
+          beforeX,
+          beforeY,
+          afterX: vv.pageLeft,
+          afterY: vv.pageTop,
+          wheelX: x,
+          wheelY: y,
+          targetAtPoint: describeElement(hitEl, win),
+          docOverflow: docEl
+            ? `${docEl.scrollWidth}/${docEl.clientWidth} x ${docEl.scrollHeight}/${docEl.clientHeight}`
+            : null,
+        };
+      }
+
+      return res;
     }
 
     if (message.name === "AltPan:Zoom") {

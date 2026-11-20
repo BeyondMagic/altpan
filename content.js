@@ -18,6 +18,7 @@
     sensitivity: 0.5,
     momentumEnabled: true,
     friction: 0.92,
+    debugMode: false,
     blacklist: [
       "figma.com",
       "miro.com",
@@ -136,6 +137,29 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
+  function describeElement(el) {
+    if (!el) return null;
+    if (el === document || el === window) return "DOCUMENT";
+    const tag = el.tagName || "NODE";
+    const id = el.id ? `#${el.id}` : "";
+    const cls = typeof el.className === "string" && el.className.trim()
+      ? `.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`
+      : "";
+    let extra = "";
+    try {
+      const cs = window.getComputedStyle(el);
+      extra = ` (ov=${cs.overflowX}/${cs.overflowY}, sw=${el.scrollWidth}/${el.clientWidth}, sh=${el.scrollHeight}/${el.clientHeight})`;
+    } catch {
+      // Ignore
+    }
+    return `${tag}${id}${cls}${extra}`;
+  }
+
+  function debugLog(event, data) {
+    if (!settings.debugMode) return;
+    console.info(`[AltPan Debug] ${event}`, data);
+  }
+
   function removeGrabbingCursor() {
     const style = document.getElementById(STYLE_ID);
     if (style) {
@@ -177,8 +201,21 @@
           top: ancestor.canY ? scrollY : 0,
           behavior: "instant"
         });
-        if (ancestor.canX) remX -= (el.scrollLeft - beforeX);
-        if (ancestor.canY) remY -= (el.scrollTop - beforeY);
+        const movedX = el.scrollLeft - beforeX;
+        const movedY = el.scrollTop - beforeY;
+        if (ancestor.canX) remX -= movedX;
+        if (ancestor.canY) remY -= movedY;
+        debugLog("ancestor scroll", {
+          ancestor: describeElement(el),
+          canX: ancestor.canX,
+          canY: ancestor.canY,
+          reqX: scrollX,
+          reqY: scrollY,
+          movedX,
+          movedY,
+          remX,
+          remY
+        });
       }
     }
 
@@ -193,7 +230,21 @@
       queuedVisualY += remY;
       pumpVisualPan();
     } else {
+      const beforeX = window.scrollX;
+      const beforeY = window.scrollY;
       window.scrollBy({ left: remX, top: remY, behavior: "instant" });
+      const movedX = window.scrollX - beforeX;
+      const movedY = window.scrollY - beforeY;
+      debugLog("dom scrollBy", {
+        isTopFrame: window === window.top,
+        scale,
+        reqX: remX,
+        reqY: remY,
+        movedX,
+        movedY,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY
+      });
     }
   }
 
@@ -218,8 +269,12 @@
     browser.runtime.sendMessage({
       type: "altpan:visual_pan",
       deltaX: dx,
-      deltaY: dy
+      deltaY: dy,
+      debug: !!settings.debugMode
     }).then((res) => {
+      if (settings.debugMode) {
+        debugLog("visual_pan result", { dx, dy, res });
+      }
       if (!res || !res.ok) {
         console.warn("[AltPan] visual_pan failed, falling back to scrollBy:", res);
         window.scrollBy({ left: dx, top: dy, behavior: "instant" });
@@ -316,11 +371,24 @@
   function onMouseDown(e) {
     if (e.button !== 1) return;
 
-    if (!settings.enabled || isBlacklisted(window.location.hostname, settings.blacklist)) {
+    if (!settings.enabled) {
+      debugLog("ignored mousedown (disabled)", { isTopFrame: window === window.top, href: window.location.href });
+      return;
+    }
+
+    if (isBlacklisted(window.location.hostname, settings.blacklist)) {
+      debugLog("ignored mousedown (blacklisted)", { hostname: window.location.hostname });
       return;
     }
 
     if (!isModifierActive(e, settings.modifierKey)) {
+      debugLog("ignored mousedown (modifier inactive)", {
+        expected: settings.modifierKey,
+        alt: e.altKey,
+        shift: e.shiftKey,
+        ctrl: e.ctrlKey,
+        meta: e.metaKey
+      });
       return;
     }
 
@@ -340,6 +408,23 @@
     lastScreenY = e.screenY;
     lastTimestamp = performance.now();
     velocitySamples = [];
+
+    if (settings.debugMode) {
+      const vv = window.visualViewport;
+      const docEl = document.documentElement;
+      const ancestor = findScrollableAncestor(e.target, true, true);
+      debugLog("pan start", {
+        isTopFrame: window === window.top,
+        href: window.location.href,
+        scale: vv ? vv.scale : 1.0,
+        vvOffset: vv ? `${vv.offsetLeft}, ${vv.offsetTop}` : null,
+        vvPage: vv ? `${vv.pageLeft}, ${vv.pageTop}` : null,
+        docScroll: `${window.scrollX}, ${window.scrollY}`,
+        docSize: docEl ? `${docEl.scrollWidth}/${docEl.clientWidth} x ${docEl.scrollHeight}/${docEl.clientHeight}` : null,
+        target: describeElement(e.target),
+        ancestor: ancestor ? describeElement(ancestor.element) : null
+      });
+    }
 
     injectGrabbingCursor();
   }
@@ -493,7 +578,18 @@
         deltaY: e.deltaY,
         deltaMode: e.deltaMode,
         clientX: e.clientX,
-        clientY: e.clientY
+        clientY: e.clientY,
+        debug: !!settings.debugMode
+      }).then((res) => {
+        if (settings.debugMode) {
+          debugLog("wheel zoom result", {
+            deltaY: e.deltaY,
+            deltaMode: e.deltaMode,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            res
+          });
+        }
       }).catch((err) => {
         console.warn("[AltPan] visual_zoom sendMessage failed:", err);
       });

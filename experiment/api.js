@@ -112,20 +112,20 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
           return { available: true };
         },
 
-        async panVisual({ tabId, deltaX, deltaY }) {
+        async panVisual({ tabId, deltaX, deltaY, debug = false }) {
           try {
             const actor = getTopActor(extension, tabId);
             if (!actor) {
               return { ok: false, reason: "no-actor" };
             }
-            return await actor.sendQuery("AltPan:Pan", { deltaX, deltaY });
+            return await actor.sendQuery("AltPan:Pan", { deltaX, deltaY, debug });
           } catch (err) {
             console.error("[AltPan Experiment] panVisual failed:", err);
             return { ok: false, error: String(err) };
           }
         },
 
-        async zoomVisual({ tabId, factor, deltaY = 0, deltaMode = 0, clientX, clientY }) {
+        async zoomVisual({ tabId, factor, deltaY = 0, deltaMode = 0, clientX, clientY, debug = false }) {
           try {
             const actor = getTopActor(extension, tabId);
             if (!actor) {
@@ -139,6 +139,7 @@ var altpan = class extends ExtensionCommon.ExtensionAPI {
               clientX,
               clientY,
               nativeZoomModifier,
+              debug,
             });
           } catch (err) {
             console.error("[AltPan Experiment] zoomVisual failed:", err);

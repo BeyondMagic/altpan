@@ -25,7 +25,8 @@
             "properties": {
               "tabId": { "type": "integer" },
               "deltaX": { "type": "number" },
-              "deltaY": { "type": "number" }
+              "deltaY": { "type": "number" },
+              "debug": { "type": "boolean" }
             },
             "required": ["tabId", "deltaX", "deltaY"]
           }
@@ -45,7 +46,8 @@
               "deltaY": { "type": "number" },
               "deltaMode": { "type": "integer" },
               "clientX": { "type": "number" },
-              "clientY": { "type": "number" }
+              "clientY": { "type": "number" },
+              "debug": { "type": "boolean" }
             },
             "required": ["tabId", "factor", "clientX", "clientY"]
           }

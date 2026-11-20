@@ -140,6 +140,7 @@ Click the AltPan icon in your toolbar to change any setting:
 | Kinetic Momentum | `Enabled` | Keeps scrolling briefly after you let go of the mouse button. |
 | Coast Duration | `Normal` (`0.92`) | How fast momentum slows down (`Crisp`: `0.88`, `Normal`: `0.92`, `Floaty`: `0.96`). |
 | Excluded Domains | `figma.com`, `miro.com`, `maps.google.com` | Sites where AltPan stays out of the way (plus a "+ Current Site" button). |
+| Debug Logging | `false` | Logs frame, container, and scroll details to the webpage DevTools Console. |
 
 ___
 
