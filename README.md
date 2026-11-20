@@ -43,35 +43,62 @@
 
 ## Purpose
 
-If you pinch-zoom into a page in Firefox and try to pan around with a regular mouse, you quickly hit a wall. Standard autoscroll or `window.scrollBy` calls only move the DOM layout viewport. When a page doesn't overflow horizontally (`scrollWidth == clientWidth`), horizontal scrolling stays stuck at `0`, and `visualViewport.offsetLeft` is read-only.
+Firefox supports pinch-zooming into a page, but panning around while zoomed in with a regular mouse does not work well. Standard autoscroll and `window.scrollBy` calls move only the page layout, so horizontal panning stops once the page fits within the window width.
 
-AltPan gives you a hand-tool drag gesture (middle-click drag by default) that pans both axes at 1:1 speed while pinch-zoomed, without needing any external helper or OS-level input bridge.
+AltPan provides a hand-tool drag gesture (middle-click drag by default) that moves the page on both axes at 1:1 speed while zoomed in, without requiring an external helper application or OS-level input bridge.
 
 ## Technical Architecture
 
 AltPan runs as a self-contained Firefox WebExtension with a lightweight built-in Experiment API:
 
-```
-[User Action: Middle-Click Drag / Wheel Zoom]
-                      │
-                      ▼
-       Inner scrollable container?
-             │              │
-            YES             NO
-             │              │
-             ▼              ▼
-      [element.scrollBy]  [browser.altpan Experiment]
-                            │
-                    JSWindowActor IPC
-                            │
-                            ▼
-                nsIDOMWindowUtils
-         scrollToVisual / setResolutionAndScaleTo
-```
+```mermaid
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 36, "rankSpacing": 56, "padding": 18, "subGraphTitleMargin": {"top": 14, "bottom": 14}}}}%%
+flowchart TD
+    Act(["middle-button drag / wheel zoom"])
 
-When dragging over a scrollable box (such as a code block or wide table), `content.js` scrolls that container first with `element.scrollBy`. Any leftover pan distance is coalesced on each `requestAnimationFrame` and sent to `experiment/api.js`.
+    Dec{"Inner scrollable<br/>container?"}
 
-Inside the tab's `JSWindowActorChild`, AltPan calls Firefox's internal `nsIDOMWindowUtils.scrollToVisual` (and `setResolutionAndScaleTo` for optional wheel-based pinch-zoom). That updates the visual viewport directly inside Gecko and spills smoothly into the layout viewport, with no external daemon or OS input permissions required. If the Experiment API is turned off, AltPan falls back to `window.scrollBy`.
+    subgraph content["Content process · JavaScript"]
+        direction TB
+        ScrollBy["element.scrollBy()<br/><small>scrolls the inner element</small>"]
+        Altpan["browser.altpan experiment<br/><small>no inner scroller found</small>"]
+        IPC["JSWindowActor IPC<br/><small>message to the parent process</small>"]
+        Altpan --> IPC
+    end
+
+    subgraph parent["Parent process · privileged API"]
+        direction TB
+        Utils["nsIDOMWindowUtils"]
+        Visual["scrollToVisual()<br/><small>visual viewport pan</small>"]
+        Scale["setResolutionAndScaleTo()<br/><small>zoom / resolution</small>"]
+        Utils --> Visual
+        Utils --> Scale
+    end
+
+    Act --> Dec
+    Dec -->|"YES"| ScrollBy
+    Dec -->|"NO"| Altpan
+    IPC --> Utils
+
+    classDef trigger fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1;
+    classDef decision fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#7A4F00;
+    classDef jsNode fill:#E7F0FA,stroke:#1E6BB8,stroke-width:2px,color:#10395E;
+    classDef ipcNode fill:#EDE7F6,stroke:#5E35B1,stroke-width:2px,color:#311B92;
+    classDef privileged fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20;
+    classDef endJs fill:#1E6BB8,stroke:#10395E,stroke-width:3px,color:#FFFFFF;
+    classDef endPriv fill:#2E7D32,stroke:#1B5E20,stroke-width:3px,color:#FFFFFF;
+
+    class Act trigger;
+    class Dec decision;
+    class Altpan jsNode;
+    class IPC ipcNode;
+    class Utils privileged;
+    class ScrollBy endJs;
+    class Visual,Scale endPriv;
+
+    style content fill:#F5F9FD,stroke:#7FA9D4,stroke-width:2px;
+    style parent fill:#F4FBF5,stroke:#66BB6A,stroke-width:2px;
+```
 
 ## Installation
 
