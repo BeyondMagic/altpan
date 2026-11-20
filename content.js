@@ -32,16 +32,26 @@
   let justFinishedPan = false;
   let startTargetElement = null;
 
-  let lastClientX = 0;
-  let lastClientY = 0;
+  let lastScreenX = 0;
+  let lastScreenY = 0;
   let lastTimestamp = 0;
   let velocitySamples = [];
   let momentumRafId = null;
 
-  // Animation frame batching for smooth drag dispatch
+  // Animation frame batching & serialized visual pan queue
   let pendingDx = 0;
   let pendingDy = 0;
   let panRafId = null;
+  let isPanInFlight = false;
+  let queuedVisualX = 0;
+  let queuedVisualY = 0;
+
+  // Smooth rAF pinch-zoom state
+  let zoomTargetScale = null;
+  let zoomAnchorVisualX = 0;
+  let zoomAnchorVisualY = 0;
+  let zoomRafId = null;
+  let isZoomInFlight = false;
 
   const STYLE_ID = "altpan-cursor-lock-style";
 
@@ -174,22 +184,47 @@
     const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
 
     if (scale > 1.02 && typeof browser !== "undefined" && browser.runtime) {
-      browser.runtime.sendMessage({
-        type: "altpan:visual_pan",
-        deltaX: remX,
-        deltaY: remY
-      }).then((res) => {
-        if (!res || !res.ok) {
-          console.warn("[AltPan] visual_pan failed, falling back to scrollBy:", res);
-          window.scrollBy({ left: remX, top: remY, behavior: "instant" });
-        }
-      }).catch((err) => {
-        console.warn("[AltPan] visual_pan sendMessage failed:", err);
-        window.scrollBy({ left: remX, top: remY, behavior: "instant" });
-      });
+      queuedVisualX += remX;
+      queuedVisualY += remY;
+      pumpVisualPan();
     } else {
       window.scrollBy({ left: remX, top: remY, behavior: "instant" });
     }
+  }
+
+  function pumpVisualPan() {
+    if (isPanInFlight) return;
+
+    const dx = queuedVisualX;
+    const dy = queuedVisualY;
+    if (Math.abs(dx) <= 0.05 && Math.abs(dy) <= 0.05) {
+      queuedVisualX = 0;
+      queuedVisualY = 0;
+      return;
+    }
+
+    queuedVisualX = 0;
+    queuedVisualY = 0;
+    isPanInFlight = true;
+
+    browser.runtime.sendMessage({
+      type: "altpan:visual_pan",
+      deltaX: dx,
+      deltaY: dy
+    }).then((res) => {
+      if (!res || !res.ok) {
+        console.warn("[AltPan] visual_pan failed, falling back to scrollBy:", res);
+        window.scrollBy({ left: dx, top: dy, behavior: "instant" });
+      }
+    }).catch((err) => {
+      console.warn("[AltPan] visual_pan sendMessage failed:", err);
+      window.scrollBy({ left: dx, top: dy, behavior: "instant" });
+    }).finally(() => {
+      isPanInFlight = false;
+      if (Math.abs(queuedVisualX) > 0.05 || Math.abs(queuedVisualY) > 0.05) {
+        pumpVisualPan();
+      }
+    });
   }
 
   // --- Momentum / Inertia Simulation ---
@@ -253,8 +288,9 @@
 
     if (dx === 0 && dy === 0) return;
 
+    const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
     const sensitivity = typeof settings.sensitivity === "number" ? settings.sensitivity : 0.5;
-    applyPanDelta(startTargetElement, -dx * sensitivity, -dy * sensitivity);
+    applyPanDelta(startTargetElement, -(dx / scale) * sensitivity, -(dy / scale) * sensitivity);
   }
 
   // --- Core Drag Gesture Lifecycle ---
@@ -275,13 +311,16 @@
     e.stopImmediatePropagation();
 
     cancelMomentum();
+    cancelZoom();
     cancelPanRaf();
     pendingDx = 0;
     pendingDy = 0;
+    queuedVisualX = 0;
+    queuedVisualY = 0;
     isPanning = true;
     startTargetElement = e.target;
-    lastClientX = e.clientX;
-    lastClientY = e.clientY;
+    lastScreenX = e.screenX;
+    lastScreenY = e.screenY;
     lastTimestamp = performance.now();
     velocitySamples = [];
 
@@ -300,24 +339,25 @@
     e.stopImmediatePropagation();
 
     const now = performance.now();
-    const dx = e.clientX - lastClientX;
-    const dy = e.clientY - lastClientY;
+    const dx = e.screenX - lastScreenX;
+    const dy = e.screenY - lastScreenY;
     const dt = now - lastTimestamp;
 
     if (dx === 0 && dy === 0) return;
 
-    lastClientX = e.clientX;
-    lastClientY = e.clientY;
+    lastScreenX = e.screenX;
+    lastScreenY = e.screenY;
     lastTimestamp = now;
 
     pendingDx += dx;
     pendingDy += dy;
 
+    const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
     const sensitivity = typeof settings.sensitivity === "number" ? settings.sensitivity : 0.5;
 
     if (dt > 0) {
-      const scrollX = -dx * sensitivity;
-      const scrollY = -dy * sensitivity;
+      const scrollX = -(dx / scale) * sensitivity;
+      const scrollY = -(dy / scale) * sensitivity;
       velocitySamples.push({ scrollX, scrollY, dt, time: now });
       velocitySamples = velocitySamples.filter((s) => now - s.time < 90);
       if (velocitySamples.length > 8) velocitySamples.shift();
@@ -350,8 +390,9 @@
       pendingDx = 0;
       pendingDy = 0;
 
+      const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
       const sensitivity = typeof settings.sensitivity === "number" ? settings.sensitivity : 0.5;
-      applyPanDelta(startTargetElement, -dx * sensitivity, -dy * sensitivity);
+      applyPanDelta(startTargetElement, -(dx / scale) * sensitivity, -(dy / scale) * sensitivity);
     }
 
     justFinishedPan = true;
@@ -387,7 +428,63 @@
     }
   }
 
-  // --- Built-in Cursor-Centered Pinch-Zoom ---
+  // --- Built-in Smooth Cursor-Centered Pinch-Zoom ---
+
+  function cancelZoom() {
+    if (zoomRafId !== null) {
+      cancelAnimationFrame(zoomRafId);
+      zoomRafId = null;
+    }
+    zoomTargetScale = null;
+  }
+
+  function stepZoom() {
+    zoomRafId = null;
+    if (zoomTargetScale === null) return;
+    if (isZoomInFlight) {
+      zoomRafId = requestAnimationFrame(stepZoom);
+      return;
+    }
+
+    const vv = window.visualViewport;
+    const curScale = (vv && vv.scale) ? vv.scale : 1.0;
+    const ratio = zoomTargetScale / curScale;
+
+    if (Math.abs(ratio - 1.0) < 0.002) {
+      if (zoomTargetScale === 1.0 && curScale > 1.0005 && typeof browser !== "undefined" && browser.runtime) {
+        isZoomInFlight = true;
+        browser.runtime.sendMessage({
+          type: "altpan:visual_zoom",
+          factor: 1.0 / curScale,
+          clientX: zoomAnchorVisualX,
+          clientY: zoomAnchorVisualY
+        }).catch(() => {}).finally(() => {
+          isZoomInFlight = false;
+        });
+      }
+      zoomTargetScale = null;
+      return;
+    }
+
+    const stepFactor = Math.pow(ratio, 0.35);
+    if (typeof browser === "undefined" || !browser.runtime) {
+      zoomTargetScale = null;
+      return;
+    }
+
+    isZoomInFlight = true;
+    browser.runtime.sendMessage({
+      type: "altpan:visual_zoom",
+      factor: stepFactor,
+      clientX: zoomAnchorVisualX,
+      clientY: zoomAnchorVisualY
+    }).catch(() => {}).finally(() => {
+      isZoomInFlight = false;
+      if (zoomTargetScale !== null && zoomRafId === null) {
+        zoomRafId = requestAnimationFrame(stepZoom);
+      }
+    });
+  }
 
   function onWheelZoom(e) {
     const mod = settings.pinchZoomModifier;
@@ -408,14 +505,26 @@
       pixelDeltaY *= window.innerHeight;
     }
 
-    const factor = Math.exp(-pixelDeltaY * 0.0025);
-    if (typeof browser !== "undefined" && browser.runtime) {
-      browser.runtime.sendMessage({
-        type: "altpan:visual_zoom",
-        factor,
-        clientX: e.clientX,
-        clientY: e.clientY
-      }).catch(() => {});
+    const vv = window.visualViewport;
+    const curScale = (vv && vv.scale) ? vv.scale : 1.0;
+    if (zoomTargetScale === null) {
+      zoomTargetScale = curScale;
+    }
+
+    // ~8% scale change per discrete wheel notch (pixelDeltaY ~ 96)
+    const wheelMultiplier = Math.exp(-pixelDeltaY * 0.0008);
+    zoomTargetScale = Math.min(Math.max(zoomTargetScale * wheelMultiplier, 1.0), 10.0);
+
+    if (zoomTargetScale < 1.015 && pixelDeltaY > 0) {
+      zoomTargetScale = 1.0;
+    }
+
+    // e.clientX/Y in Firefox are relative to the layout viewport; convert to visual viewport coordinates
+    zoomAnchorVisualX = e.clientX - (vv ? vv.offsetLeft : 0);
+    zoomAnchorVisualY = e.clientY - (vv ? vv.offsetTop : 0);
+
+    if (!zoomRafId) {
+      zoomRafId = requestAnimationFrame(stepZoom);
     }
   }
 
@@ -450,13 +559,19 @@
 
   function onBlur() {
     if (isPanning) endPan(false);
+    queuedVisualX = 0;
+    queuedVisualY = 0;
     cancelMomentum();
+    cancelZoom();
   }
 
   function onVisibilityChange() {
     if (document.hidden) {
       if (isPanning) endPan(false);
+      queuedVisualX = 0;
+      queuedVisualY = 0;
       cancelMomentum();
+      cancelZoom();
     }
   }
 

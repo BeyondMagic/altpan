@@ -39,7 +39,7 @@ export class AltPanChild extends JSWindowActorChild {
       let newScale = Math.min(Math.max(oldScale * factor, MIN_SCALE), MAX_SCALE);
 
       // Snap cleanly back to 1.0 near minimum zoom to avoid residual sub-1% drift
-      if (newScale < 1.005 && factor < 1.0) {
+      if (newScale < 1.002 && factor < 1.0) {
         newScale = 1.0;
       }
 
