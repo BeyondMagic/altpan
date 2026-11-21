@@ -26,6 +26,15 @@
               "tabId": { "type": "integer" },
               "deltaX": { "type": "number" },
               "deltaY": { "type": "number" },
+              "screenDeltaX": { "type": "number" },
+              "screenDeltaY": { "type": "number" },
+              "contentDpr": { "type": "number" },
+              "phase": {
+                "type": "string",
+                "enum": ["begin", "update", "end"]
+              },
+              "screenX": { "type": "number" },
+              "screenY": { "type": "number" },
               "forceVisual": { "type": "boolean" },
               "debug": { "type": "boolean" }
             },

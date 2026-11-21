@@ -47,6 +47,11 @@
   let isPanInFlight = false;
   let queuedVisualX = 0;
   let queuedVisualY = 0;
+  let visualGestureOpen = false;
+  let pendingVisualEnd = false;
+  let pendingCloseFirst = false;
+  let startPanScreenX = null;
+  let startPanScreenY = null;
 
   // Anti-loop guard for our own synthesized APZ zoom wheel events
   let lastSyntheticZoomAt = 0;
@@ -55,9 +60,12 @@
   let lastSyntheticZoomDeltaY = 0;
   let lastSyntheticZoomDeltaMode = 0;
 
-  // Track own momentum wheel events so sendWheelEvent doesn't cancel momentum
+  // Track own momentum wheel events so sendWheelEvent/PanGesture doesn't cancel momentum
   let lastMomentumDeltaX = 0;
   let lastMomentumDeltaY = 0;
+  let lastMomentumScreenDeltaX = 0;
+  let lastMomentumScreenDeltaY = 0;
+  let lastMomentumDpr = 1;
   let lastMomentumSentAt = 0;
 
   const STYLE_ID = "altpan-cursor-lock-style";
@@ -220,17 +228,21 @@
       }
     }
 
+    const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
+
+    if ((scale > 1.02 || settings.forceVisualPan) && typeof browser !== "undefined" && browser.runtime) {
+      if (remX === 0 && remY === 0) return;
+      queuedVisualX += remX;
+      queuedVisualY += remY;
+      pumpVisualPan();
+      return;
+    }
+
     if (Math.abs(remX) <= 0.05 && Math.abs(remY) <= 0.05) {
       return;
     }
 
-    const scale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
-
-    if ((scale > 1.02 || settings.forceVisualPan) && typeof browser !== "undefined" && browser.runtime) {
-      queuedVisualX += remX;
-      queuedVisualY += remY;
-      pumpVisualPan();
-    } else {
+    {
       const beforeX = window.scrollX;
       const beforeY = window.scrollY;
       window.scrollBy({ left: remX, top: remY, behavior: "instant" });
@@ -249,60 +261,148 @@
     }
   }
 
-  function pumpVisualPan() {
-    if (isPanInFlight) return;
-
-    const dx = queuedVisualX;
-    const dy = queuedVisualY;
-    if (Math.abs(dx) <= 0.05 && Math.abs(dy) <= 0.05) {
-      queuedVisualX = 0;
-      queuedVisualY = 0;
-      return;
-    }
-
-    queuedVisualX = 0;
-    queuedVisualY = 0;
+  function dispatchVisualPanMessage(payload) {
     isPanInFlight = true;
-    lastMomentumDeltaX = dx;
-    lastMomentumDeltaY = dy;
-    lastMomentumSentAt = performance.now();
-
-    browser.runtime.sendMessage({
-      type: "altpan:visual_pan",
-      deltaX: dx,
-      deltaY: dy,
-      forceVisual: !!settings.forceVisualPan,
-      debug: !!settings.debugMode
-    }).then((res) => {
+    browser.runtime.sendMessage(payload).then((res) => {
       if (settings.debugMode) {
-        debugLog("visual_pan result", { dx, dy, res });
+        debugLog("visual_pan result", {
+          dx: payload.deltaX,
+          dy: payload.deltaY,
+          phase: payload.phase,
+          res
+        });
       }
       if (!res || !res.ok) {
         console.warn("[AltPan] visual_pan failed, falling back to scrollBy:", res);
-        window.scrollBy({ left: dx, top: dy, behavior: "instant" });
+        if (payload.deltaX || payload.deltaY) {
+          window.scrollBy({ left: payload.deltaX, top: payload.deltaY, behavior: "instant" });
+        }
       }
     }).catch((err) => {
       console.warn("[AltPan] visual_pan sendMessage failed:", err);
-      window.scrollBy({ left: dx, top: dy, behavior: "instant" });
+      if (payload.deltaX || payload.deltaY) {
+        window.scrollBy({ left: payload.deltaX, top: payload.deltaY, behavior: "instant" });
+      }
     }).finally(() => {
       isPanInFlight = false;
-      if (Math.abs(queuedVisualX) > 0.05 || Math.abs(queuedVisualY) > 0.05) {
-        pumpVisualPan();
-      }
+      pumpVisualPan();
     });
+  }
+
+  function dispatchVisualEndMessage() {
+    dispatchVisualPanMessage({
+      type: "altpan:visual_pan",
+      deltaX: 0,
+      deltaY: 0,
+      screenDeltaX: 0,
+      screenDeltaY: 0,
+      contentDpr: window.devicePixelRatio || 1,
+      phase: "end",
+      screenX: typeof startPanScreenX === "number" ? startPanScreenX : undefined,
+      screenY: typeof startPanScreenY === "number" ? startPanScreenY : undefined,
+      forceVisual: !!settings.forceVisualPan,
+      debug: !!settings.debugMode
+    });
+  }
+
+  function pumpVisualPan() {
+    if (isPanInFlight || typeof browser === "undefined" || !browser.runtime) return;
+
+    if (pendingCloseFirst) {
+      pendingCloseFirst = false;
+      if (visualGestureOpen) {
+        visualGestureOpen = false;
+        dispatchVisualEndMessage();
+        return;
+      }
+    }
+
+    const curScale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1.0;
+    const screenMag = Math.hypot(queuedVisualX * curScale, queuedVisualY * curScale);
+    const shouldFlush = screenMag >= 0.12 || (pendingVisualEnd && screenMag > 0.005);
+
+    if (shouldFlush) {
+      const dx = queuedVisualX;
+      const dy = queuedVisualY;
+      queuedVisualX = 0;
+      queuedVisualY = 0;
+
+      const dpr = window.devicePixelRatio || 1;
+      const screenDeltaX = dx * curScale;
+      const screenDeltaY = dy * curScale;
+      const phase = visualGestureOpen ? "update" : "begin";
+      visualGestureOpen = true;
+
+      lastMomentumDeltaX = dx;
+      lastMomentumDeltaY = dy;
+      lastMomentumScreenDeltaX = screenDeltaX;
+      lastMomentumScreenDeltaY = screenDeltaY;
+      lastMomentumDpr = dpr;
+      lastMomentumSentAt = performance.now();
+
+      dispatchVisualPanMessage({
+        type: "altpan:visual_pan",
+        deltaX: dx,
+        deltaY: dy,
+        screenDeltaX,
+        screenDeltaY,
+        contentDpr: dpr,
+        phase,
+        screenX: typeof startPanScreenX === "number" ? startPanScreenX : undefined,
+        screenY: typeof startPanScreenY === "number" ? startPanScreenY : undefined,
+        forceVisual: !!settings.forceVisualPan,
+        debug: !!settings.debugMode
+      });
+      return;
+    }
+
+    if (pendingVisualEnd) {
+      pendingVisualEnd = false;
+      queuedVisualX = 0;
+      queuedVisualY = 0;
+      if (visualGestureOpen) {
+        visualGestureOpen = false;
+        dispatchVisualEndMessage();
+      }
+    }
+  }
+
+  function closeVisualGestureImmediately() {
+    if (!visualGestureOpen) {
+      queuedVisualX = 0;
+      queuedVisualY = 0;
+      pendingVisualEnd = false;
+      return;
+    }
+    queuedVisualX = 0;
+    queuedVisualY = 0;
+    pendingVisualEnd = false;
+    pendingCloseFirst = true;
+    pumpVisualPan();
+  }
+
+  function requestVisualEndAfterFlush() {
+    if (!visualGestureOpen) return;
+    pendingVisualEnd = true;
+    pumpVisualPan();
   }
 
   // --- Momentum / Inertia Simulation ---
 
-  function cancelMomentum() {
+  function cancelMomentum(closeMode = "immediate") {
     if (momentumRafId !== null) {
       cancelAnimationFrame(momentumRafId);
       momentumRafId = null;
     }
+    if (closeMode === "flush") {
+      requestVisualEndAfterFlush();
+    } else if (closeMode === "immediate") {
+      closeVisualGestureImmediately();
+    }
   }
 
   function startMomentum(vx, vy) {
-    cancelMomentum();
+    cancelMomentum("none");
 
     const friction = typeof settings.friction === "number" ? settings.friction : 0.92;
     const MAX_SPEED = 90;
@@ -318,7 +418,7 @@
       vy *= friction;
 
       if (Math.hypot(vx, vy) < 0.25) {
-        cancelMomentum();
+        cancelMomentum("flush");
         return;
       }
 
@@ -329,18 +429,22 @@
     momentumRafId = requestAnimationFrame(step);
   }
 
+  function matchesSynthesizedWheelEcho(e) {
+    if (!e || e.type !== "wheel" || e.deltaMode !== 0) return false;
+    if (performance.now() - lastMomentumSentAt >= 150) return false;
+    const candidates = [
+      [lastMomentumDeltaX, lastMomentumDeltaY],
+      [lastMomentumScreenDeltaX, lastMomentumScreenDeltaY],
+      [lastMomentumScreenDeltaX * lastMomentumDpr, lastMomentumScreenDeltaY * lastMomentumDpr]
+    ];
+    return candidates.some(([ex, ey]) => Math.abs(e.deltaX - ex) < 0.35 && Math.abs(e.deltaY - ey) < 0.35);
+  }
+
   function onInterruptMomentum(e) {
-    if (
-      e &&
-      e.type === "wheel" &&
-      e.deltaMode === 0 &&
-      performance.now() - lastMomentumSentAt < 120 &&
-      Math.abs(e.deltaX - lastMomentumDeltaX) < 0.1 &&
-      Math.abs(e.deltaY - lastMomentumDeltaY) < 0.1
-    ) {
+    if (matchesSynthesizedWheelEcho(e)) {
       return;
     }
-    cancelMomentum();
+    cancelMomentum(isPanning ? "none" : "immediate");
   }
 
   // --- Animation Frame Drag Dispatcher ---
@@ -398,16 +502,20 @@
     e.preventDefault();
     e.stopImmediatePropagation();
 
-    cancelMomentum();
+    cancelMomentum("immediate");
     cancelPanRaf();
     pendingDx = 0;
     pendingDy = 0;
     queuedVisualX = 0;
     queuedVisualY = 0;
+    pendingVisualEnd = false;
     isPanning = true;
     startTargetElement = e.target;
     lastScreenX = e.screenX;
     lastScreenY = e.screenY;
+    const dpr = window.devicePixelRatio || 1;
+    startPanScreenX = e.screenX * dpr;
+    startPanScreenY = e.screenY * dpr;
     lastTimestamp = performance.now();
     velocitySamples = [];
 
@@ -506,6 +614,7 @@
 
     removeGrabbingCursor();
 
+    let launchedMomentum = false;
     if (launchMomentum && settings.momentumEnabled && velocitySamples.length > 0) {
       const now = performance.now();
       const recent = velocitySamples.filter((s) => now - s.time < 80);
@@ -525,10 +634,15 @@
           const vx = (totalX / totalDt) * 16.67;
           const vy = (totalY / totalDt) * 16.67;
           if (Math.hypot(vx, vy) > 1.2) {
+            launchedMomentum = true;
             startMomentum(vx, vy);
           }
         }
       }
+    }
+
+    if (!launchedMomentum) {
+      requestVisualEndAfterFlush();
     }
   }
 
@@ -629,17 +743,13 @@
 
   function onBlur() {
     if (isPanning) endPan(false);
-    queuedVisualX = 0;
-    queuedVisualY = 0;
-    cancelMomentum();
+    cancelMomentum("immediate");
   }
 
   function onVisibilityChange() {
     if (document.hidden) {
       if (isPanning) endPan(false);
-      queuedVisualX = 0;
-      queuedVisualY = 0;
-      cancelMomentum();
+      cancelMomentum("immediate");
     }
   }
 

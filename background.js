@@ -99,10 +99,17 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     if (!hasExperimentAPI()) {
       return Promise.resolve({ ok: false, reason: "experiment-disabled" });
     }
+    const optNum = (val) => (val != null && Number.isFinite(Number(val)) ? Number(val) : undefined);
     return browser.altpan.panVisual({
       tabId,
       deltaX: Number(msg.deltaX) || 0,
       deltaY: Number(msg.deltaY) || 0,
+      screenDeltaX: optNum(msg.screenDeltaX),
+      screenDeltaY: optNum(msg.screenDeltaY),
+      contentDpr: optNum(msg.contentDpr),
+      phase: typeof msg.phase === "string" ? msg.phase : undefined,
+      screenX: optNum(msg.screenX),
+      screenY: optNum(msg.screenY),
       forceVisual: !!msg.forceVisual,
       debug: !!msg.debug
     }).then((res) => {
